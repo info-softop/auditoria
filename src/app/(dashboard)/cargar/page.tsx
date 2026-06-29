@@ -34,7 +34,7 @@ export default async function CargarPage() {
     <>
       <PageHeader
         title="Cargar reportes"
-        description="Sube los Excel exportados de Softop. Detectamos el tipo y el mes de cada fila, validamos los datos y agregamos solo las filas nuevas (las repetidas se omiten, sin borrar lo ya cargado)."
+        description="Sube los Excel exportados de Softop. Detectamos el tipo y el mes de cada fila y validamos los datos. Si un período ya tenía datos, se reemplaza con el archivo nuevo (el último export siempre manda)."
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <UploadWizard opticas={opticas} />

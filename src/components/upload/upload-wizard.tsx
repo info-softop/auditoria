@@ -225,8 +225,8 @@ export function UploadWizard({
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <TriangleAlert className="size-4 text-sev-media" />
                     Estos períodos ya tienen datos. Se{" "}
-                    <span className="underline">agregan</span> solo las filas nuevas
-                    (las repetidas se omiten):
+                    <span className="underline">reemplazarán</span> por completo con
+                    este archivo (lo anterior se borra):
                   </div>
                   <ul className="mt-2 flex flex-wrap gap-1.5">
                     {preview.existentes.map((e, i) => (

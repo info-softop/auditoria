@@ -65,8 +65,8 @@ export async function POST(req: Request) {
   }
 
   // Períodos del archivo que YA tienen datos de este tipo PARA LA MISMA óptica.
-  // Al confirmar se AGREGAN solo las filas nuevas (las repetidas se omiten; no se
-  // borra lo existente). Si no se conoce la óptica, no se avisa nada todavía.
+  // Al confirmar se REEMPLAZA ese (óptica, período, tipo): se borra lo anterior y
+  // se carga el archivo nuevo. Si no se conoce la óptica, no se avisa nada todavía.
   const yaCargados =
     opticaIdsArchivo.length > 0
       ? await db.importacion.findMany({
