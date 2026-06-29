@@ -63,7 +63,7 @@ steps:
       - auditoria-migrate
       - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/migrator:${SHORT_SHA}
       - --region=${_REGION}
-      - --add-cloudsql-instances=${_CLOUD_SQL_CONN}
+      - --set-cloudsql-instances=${_CLOUD_SQL_CONN}
       - --set-secrets=DATABASE_URL=AUDITORIA_DATABASE_URL:latest
       - --max-retries=1
       - --task-timeout=600
