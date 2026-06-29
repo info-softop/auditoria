@@ -9,7 +9,7 @@ export default async function DashboardLayout({
   const user = await requireUser();
 
   return (
-    <div className="flex min-h-dvh">
+    <div className="flex min-h-dvh flex-col md:flex-row">
       <SidebarNav user={user} />
       <main className="min-w-0 flex-1 overflow-x-hidden p-6 lg:p-8">
         {children}
