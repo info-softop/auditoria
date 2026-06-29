@@ -82,8 +82,47 @@ export function isBlankRow(row: unknown[]): boolean {
   return row.every((c) => c == null || String(c).trim() === "");
 }
 
-/** Deriva el período "YYYY-MM" desde una fecha. */
+/** Mapa normalizado (encabezado→índice) desde la fila de cabeceras del Excel. */
+function headerIndexMap(actual: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  actual.forEach((h, i) => {
+    const key = norm(h);
+    if (key && !m.has(key)) m.set(key, i);
+  });
+  return m;
+}
+
+/**
+ * Resuelve la posición de cada columna ESPERADA por NOMBRE de encabezado (no por
+ * índice fijo), tolerando que Softop reordene columnas o inserte columnas extra.
+ * Devuelve un arreglo alineado a `expected`: `idx[k]` = posición real de
+ * `expected[k]` en la hoja. Si falta alguna columna esperada, LANZA (fail-loud)
+ * en vez de cargar datos desplazados/corruptos en silencio.
+ */
+export function resolveColumns(
+  actual: string[],
+  expected: readonly string[],
+  reporte: string
+): number[] {
+  const map = headerIndexMap(actual);
+  const idx: number[] = [];
+  const faltantes: string[] = [];
+  for (const h of expected) {
+    const i = map.get(norm(h));
+    if (i === undefined) faltantes.push(h);
+    idx.push(i ?? -1);
+  }
+  if (faltantes.length > 0) {
+    throw new Error(
+      `Reporte "${reporte}": faltan columnas esperadas [${faltantes.join(", ")}]. ` +
+        `Encabezados recibidos: [${actual.join(", ")}].`
+    );
+  }
+  return idx;
+}
+
+/** Deriva el período "YYYY-MM" desde una fecha (en UTC, estable en cualquier zona). */
 export function periodoFromDate(d: Date | null): string | null {
   if (!d) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }

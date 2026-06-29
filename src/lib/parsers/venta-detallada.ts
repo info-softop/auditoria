@@ -5,6 +5,7 @@ import {
   norm,
   periodoFromDate,
   readSheet,
+  resolveColumns,
   str,
   toDate,
   toNum,
@@ -84,7 +85,11 @@ function isTotalRow(row: unknown[]): boolean {
 export function parseVentaDetallada(
   buffer: Buffer,
 ): ParseResult<VentaDetalladaData> {
-  const { rows } = readSheet(buffer);
+  const { headers, rows } = readSheet(buffer);
+  // Resuelve columnas por NOMBRE (no por posición): tolera reordenamientos/columnas
+  // extra de Softop y aborta si falta alguna esperada. `col[k]` = posición real de
+  // HEADERS[k] en la hoja.
+  const col = resolveColumns(headers, HEADERS, "Venta Detallada");
 
   const parsedRows: ParsedRow<VentaDetalladaData>[] = [];
   const periodosSet = new Set<string>();
@@ -93,56 +98,56 @@ export function parseVentaDetallada(
   rows.forEach((row, i) => {
     if (isBlankRow(row) || isTotalRow(row)) return;
 
-    const fecha = toDate(row[2]);
-    const cantidad = toNum(row[20]);
-    const precioLista = toNum(row[21]);
-    const costoCompra = toNum(row[22]);
-    const descuento = toNum(row[23]);
-    const precioVenta = toNum(row[24]);
-    const saldoActual = toNum(row[35]);
+    const fecha = toDate(row[col[2]]);
+    const cantidad = toNum(row[col[20]]);
+    const precioLista = toNum(row[col[21]]);
+    const costoCompra = toNum(row[col[22]]);
+    const descuento = toNum(row[col[23]]);
+    const precioVenta = toNum(row[col[24]]);
+    const saldoActual = toNum(row[col[35]]);
 
     const data: VentaDetalladaData = {
-      optica: str(row[0]) ?? "",
-      grupo: str(row[1]),
+      optica: str(row[col[0]]) ?? "",
+      grupo: str(row[col[1]]),
       fecha,
-      hora: str(row[3]),
-      tipoDocumento: str(row[4]),
-      consecutivo: str(row[5]),
-      tipoMovimiento: str(row[6]),
-      atendidoPor: str(row[7]),
-      optometra: str(row[8]),
-      estado: str(row[9]),
-      codigoSucursal: str(row[10]),
-      documento: str(row[11]),
-      nombres: str(row[12]),
-      telefono: str(row[13]),
-      motivoVisita: str(row[14]),
-      idProducto: str(row[15]),
-      tipoProducto: str(row[16]),
-      categoria: str(row[17]),
-      referencia: str(row[18]),
-      marca: str(row[19]),
+      hora: str(row[col[3]]),
+      tipoDocumento: str(row[col[4]]),
+      consecutivo: str(row[col[5]]),
+      tipoMovimiento: str(row[col[6]]),
+      atendidoPor: str(row[col[7]]),
+      optometra: str(row[col[8]]),
+      estado: str(row[col[9]]),
+      codigoSucursal: str(row[col[10]]),
+      documento: str(row[col[11]]),
+      nombres: str(row[col[12]]),
+      telefono: str(row[col[13]]),
+      motivoVisita: str(row[col[14]]),
+      idProducto: str(row[col[15]]),
+      tipoProducto: str(row[col[16]]),
+      categoria: str(row[col[17]]),
+      referencia: str(row[col[18]]),
+      marca: str(row[col[19]]),
       cantidad,
       precioLista,
       costoCompra,
       descuento,
       precioVenta,
-      metodoPago: str(row[25]),
-      autorizacion: str(row[26]),
-      factura: str(row[27]),
-      ventasTotales: toNum(row[28]),
-      saldoAnterior: toNum(row[29]),
-      abono: toNum(row[30]),
-      abonoReciboCaja: toNum(row[31]),
-      abonoReciboCajaEmp: toNum(row[32]),
-      totalRecaudo: toNum(row[33]),
-      valorCanje: toNum(row[34]),
+      metodoPago: str(row[col[25]]),
+      autorizacion: str(row[col[26]]),
+      factura: str(row[col[27]]),
+      ventasTotales: toNum(row[col[28]]),
+      saldoAnterior: toNum(row[col[29]]),
+      abono: toNum(row[col[30]]),
+      abonoReciboCaja: toNum(row[col[31]]),
+      abonoReciboCajaEmp: toNum(row[col[32]]),
+      totalRecaudo: toNum(row[col[33]]),
+      valorCanje: toNum(row[col[34]]),
       saldoActual,
     };
 
     const raw: Record<string, unknown> = {};
     HEADERS.forEach((h, idx) => {
-      raw[h] = row[idx] ?? null;
+      raw[h] = row[col[idx]] ?? null;
     });
 
     const alerts: Alerta[] = [];

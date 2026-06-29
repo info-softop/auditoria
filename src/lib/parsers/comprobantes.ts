@@ -5,10 +5,27 @@ import {
   norm,
   periodoFromDate,
   readSheet,
+  resolveColumns,
   str,
   toDate,
   toNum,
 } from "@/lib/parsers/utils";
+
+/** Encabezados esperados por índice (orden de PROMPT.md). */
+const HEADERS = [
+  "NO COMPROBANTE",
+  "FACTURA",
+  "FECHA",
+  "TIPO COMPROBANTE",
+  "FORMA DE PAGO",
+  "CUENTA",
+  "DESCRIPCION",
+  "SUC",
+  "TERCERO",
+  "DEBITO",
+  "CREDITO",
+  "TOTAL",
+] as const;
 
 /**
  * Parser del reporte COMPROBANTES / TRASLADOS (hoja "ReporteComprobantes", 12 columnas).
@@ -24,6 +41,8 @@ import {
  */
 export function parseComprobantes(buffer: Buffer): ParseResult<ComprobanteData> {
   const { headers, rows } = readSheet(buffer);
+  // Columnas por NOMBRE (no por posición); aborta si falta alguna esperada.
+  const col = resolveColumns(headers, HEADERS, "Comprobantes");
 
   const parsed: ParsedRow<ComprobanteData>[] = [];
   const periodosSet = new Set<string>();
@@ -39,23 +58,23 @@ export function parseComprobantes(buffer: Buffer): ParseResult<ComprobanteData> 
     if (/\b(valor\s+total|total\s+general)\b/.test(joined)) return;
 
     const data: ComprobanteData = {
-      noComprobante: str(row[0]),
-      factura: str(row[1]),
-      fecha: toDate(row[2]),
-      tipoComprobante: str(row[3]),
-      formaPago: str(row[4]),
-      cuenta: str(row[5]),
-      descripcion: str(row[6]),
-      suc: str(row[7]),
-      tercero: str(row[8]),
-      debito: toNum(row[9]),
-      credito: toNum(row[10]),
-      total: toNum(row[11]),
+      noComprobante: str(row[col[0]]),
+      factura: str(row[col[1]]),
+      fecha: toDate(row[col[2]]),
+      tipoComprobante: str(row[col[3]]),
+      formaPago: str(row[col[4]]),
+      cuenta: str(row[col[5]]),
+      descripcion: str(row[col[6]]),
+      suc: str(row[col[7]]),
+      tercero: str(row[col[8]]),
+      debito: toNum(row[col[9]]),
+      credito: toNum(row[col[10]]),
+      total: toNum(row[col[11]]),
     };
 
     const raw: Record<string, unknown> = {};
-    headers.forEach((h, idx) => {
-      if (h) raw[h] = row[idx] ?? null;
+    HEADERS.forEach((h, idx) => {
+      raw[h] = row[col[idx]] ?? null;
     });
 
     const periodo = periodoFromDate(data.fecha);

@@ -2,6 +2,7 @@ import type { Alerta } from "@/lib/audit-types";
 import type { ParseResult, ParsedRow, PedidoLenteData } from "./types";
 import {
   readSheet,
+  resolveColumns,
   toNum,
   toDate,
   str,
@@ -49,7 +50,9 @@ function tieneFormatoProducto(producto: string | null): boolean {
 }
 
 export function parsePedidoLentes(buffer: Buffer): ParseResult<PedidoLenteData> {
-  const { rows: rawRows } = readSheet(buffer);
+  const { headers, rows: rawRows } = readSheet(buffer);
+  // Columnas por NOMBRE (no por posición); aborta si falta alguna esperada.
+  const col = resolveColumns(headers, HEADERS, "Pedido de Lentes");
 
   const rows: ParsedRow<PedidoLenteData>[] = [];
   const periodos = new Set<string>();
@@ -58,18 +61,18 @@ export function parsePedidoLentes(buffer: Buffer): ParseResult<PedidoLenteData> 
     if (isBlankRow(row)) return;
     if (isTotalRow(row)) return;
 
-    const pedidoId = str(row[0]);
-    const orden = str(row[1]);
+    const pedidoId = str(row[col[0]]);
+    const orden = str(row[col[1]]);
     // FECHA ENTREGA es un string (puede ser "NO"); no se parsea a fecha.
-    const fechaEntrega = str(row[2]);
-    const producto = str(row[3]);
-    const laboratorio = str(row[4]);
-    const ordenLaboratorio = str(row[5]);
-    const factura = str(row[6]);
-    const fechaOrden = toDate(row[7]);
-    const valorRaw = row[8];
+    const fechaEntrega = str(row[col[2]]);
+    const producto = str(row[col[3]]);
+    const laboratorio = str(row[col[4]]);
+    const ordenLaboratorio = str(row[col[5]]);
+    const factura = str(row[col[6]]);
+    const fechaOrden = toDate(row[col[7]]);
+    const valorRaw = row[col[8]];
     const valor = valorRaw == null || valorRaw === "" ? null : toNum(valorRaw);
-    const estado = str(row[9]);
+    const estado = str(row[col[9]]);
 
     const data: PedidoLenteData = {
       pedidoId,
@@ -87,7 +90,7 @@ export function parsePedidoLentes(buffer: Buffer): ParseResult<PedidoLenteData> 
 
     const raw: Record<string, unknown> = {};
     HEADERS.forEach((h, idx) => {
-      raw[h] = row[idx] ?? null;
+      raw[h] = row[col[idx]] ?? null;
     });
 
     const alerts: Alerta[] = [];

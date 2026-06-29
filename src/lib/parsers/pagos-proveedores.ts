@@ -2,6 +2,7 @@ import type { Alerta } from "@/lib/audit-types";
 import type { ParseResult, ParsedRow, PagoProveedorData } from "./types";
 import {
   readSheet,
+  resolveColumns,
   toNum,
   toDate,
   str,
@@ -41,14 +42,22 @@ const HEADERS = [
 
 const EPSILON = 0.01;
 
-/** Detecta filas de totales al final (ej. "$2.971.392" en débito/crédito sin PAGO). */
-function isTotalRow(row: unknown[]): boolean {
-  const pago = row[0];
+/**
+ * Detecta filas de totales al final (ej. "$2.971.392" en débito/crédito sin PAGO).
+ * Recibe los índices resueltos de PAGO/Debito/Credito (no posiciones fijas).
+ */
+function isTotalRow(
+  row: unknown[],
+  idxPago: number,
+  idxDebito: number,
+  idxCredito: number
+): boolean {
+  const pago = row[idxPago];
   const hasPago = pago != null && String(pago).trim() !== "";
   if (hasPago) return false;
   // Sin PAGO pero con algún valor monetario => fila de totales.
-  const deb = row[8];
-  const cred = row[9];
+  const deb = row[idxDebito];
+  const cred = row[idxCredito];
   const looksMoney = (v: unknown) =>
     v != null && String(v).trim() !== "" && /[\d$]/.test(String(v));
   return looksMoney(deb) || looksMoney(cred);
@@ -57,7 +66,9 @@ function isTotalRow(row: unknown[]): boolean {
 export function parsePagosProveedores(
   buffer: Buffer,
 ): ParseResult<PagoProveedorData> {
-  const { rows: rawRows } = readSheet(buffer);
+  const { headers, rows: rawRows } = readSheet(buffer);
+  // Columnas por NOMBRE (no por posición); aborta si falta alguna esperada.
+  const col = resolveColumns(headers, HEADERS, "Pagos a Proveedores");
 
   const rows: ParsedRow<PagoProveedorData>[] = [];
   const periodosSet = new Set<string>();
@@ -66,32 +77,32 @@ export function parsePagosProveedores(
   const sumByPago = new Map<string, { debito: number; credito: number; rowIdxs: number[] }>();
 
   rawRows.forEach((row, i) => {
-    if (isBlankRow(row) || isTotalRow(row)) return;
+    if (isBlankRow(row) || isTotalRow(row, col[0], col[8], col[9])) return;
 
-    const fecha = toDate(row[1]);
-    const debito = toNum(row[8]);
-    const credito = toNum(row[9]);
-    const pago = str(row[0]);
-    const comprobante = str(row[3]);
-    const proveedor = str(row[5]);
+    const fecha = toDate(row[col[1]]);
+    const debito = toNum(row[col[8]]);
+    const credito = toNum(row[col[9]]);
+    const pago = str(row[col[0]]);
+    const comprobante = str(row[col[3]]);
+    const proveedor = str(row[col[5]]);
 
     const data: PagoProveedorData = {
       pago,
       fecha,
-      observaciones: str(row[2]),
+      observaciones: str(row[col[2]]),
       comprobante,
-      noFactura: str(row[4]),
+      noFactura: str(row[col[4]]),
       proveedor,
-      cuenta: str(row[6]),
-      descripcion: str(row[7]),
+      cuenta: str(row[col[6]]),
+      descripcion: str(row[col[7]]),
       debito,
       credito,
-      usuario: str(row[10]),
+      usuario: str(row[col[10]]),
     };
 
     const raw: Record<string, unknown> = {};
     HEADERS.forEach((h, idx) => {
-      raw[h] = row[idx] ?? null;
+      raw[h] = row[col[idx]] ?? null;
     });
 
     const alerts: Alerta[] = [];

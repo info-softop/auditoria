@@ -5,6 +5,7 @@ import {
   norm,
   periodoFromDate,
   readSheet,
+  resolveColumns,
   str,
   toDate,
   toNum,
@@ -32,7 +33,7 @@ import {
 export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
   const { headers, rows } = readSheet(buffer);
 
-  const rawHeaders = [
+  const HEADERS = [
     "NO GASTOS",
     "FACTURA",
     "FECHA",
@@ -46,7 +47,9 @@ export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
     "TOTAL",
     "ABONO",
     "SALDO",
-  ];
+  ] as const;
+  // Columnas por NOMBRE (no por posición); aborta si falta alguna esperada.
+  const col = resolveColumns(headers, HEADERS, "Gastos");
 
   const parsed: ParsedRow<GastoData>[] = [];
   const periodos = new Set<string>();
@@ -57,7 +60,7 @@ export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
 
     // Saltar filas de totales (ej. "VALOR TOTAL", "TOTAL").
     const joined = norm(row.join(" "));
-    const noGastosRaw = str(row[0]);
+    const noGastosRaw = str(row[col[0]]);
     if (
       (noGastosRaw == null && joined.includes("total")) ||
       joined.includes("valor total")
@@ -65,36 +68,36 @@ export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
       continue;
     }
 
-    const fecha = toDate(row[2]);
-    const dc = str(row[9]);
-    const valor = toNum(row[8]);
-    const saldo = toNum(row[12]);
+    const fecha = toDate(row[col[2]]);
+    const dc = str(row[col[9]]);
+    const valor = toNum(row[col[8]]);
+    const saldo = toNum(row[col[12]]);
 
     const data: GastoData = {
       noGastos: noGastosRaw,
-      factura: str(row[1]),
+      factura: str(row[col[1]]),
       fecha,
-      estado: str(row[3]),
-      cuenta: str(row[4]),
-      descripcion: str(row[5]),
-      descripcionCuenta: str(row[6]),
-      tercero: str(row[7]),
+      estado: str(row[col[3]]),
+      cuenta: str(row[col[4]]),
+      descripcion: str(row[col[5]]),
+      descripcionCuenta: str(row[col[6]]),
+      tercero: str(row[col[7]]),
       valor,
       dc,
-      total: row[10] == null ? null : toNum(row[10]),
-      abono: row[11] == null ? null : toNum(row[11]),
-      saldo: row[12] == null ? null : saldo,
+      total: row[col[10]] == null ? null : toNum(row[col[10]]),
+      abono: row[col[11]] == null ? null : toNum(row[col[11]]),
+      saldo: row[col[12]] == null ? null : saldo,
     };
 
     const raw: Record<string, unknown> = {};
-    for (let c = 0; c < rawHeaders.length; c++) {
-      raw[rawHeaders[c] ?? headers[c] ?? `col${c}`] = row[c] ?? null;
-    }
+    HEADERS.forEach((h, c) => {
+      raw[h] = row[col[c]] ?? null;
+    });
 
     const alerts: Alerta[] = [];
 
     // Completitud (BAJA): tercero / descripcion / fecha / valor vacíos.
-    if (str(row[7]) == null) {
+    if (str(row[col[7]]) == null) {
       alerts.push({
         campo: "tercero",
         severidad: "BAJA",
@@ -102,7 +105,7 @@ export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
         mensaje: "El campo TERCERO está vacío.",
       });
     }
-    if (str(row[5]) == null) {
+    if (str(row[col[5]]) == null) {
       alerts.push({
         campo: "descripcion",
         severidad: "BAJA",
@@ -118,7 +121,7 @@ export function parseGastos(buffer: Buffer): ParseResult<GastoData> {
         mensaje: "El campo FECHA está vacío o es inválido.",
       });
     }
-    if (row[8] == null || String(row[8]).trim() === "") {
+    if (row[col[8]] == null || String(row[col[8]]).trim() === "") {
       alerts.push({
         campo: "valor",
         severidad: "BAJA",

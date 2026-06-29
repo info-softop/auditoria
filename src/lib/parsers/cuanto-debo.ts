@@ -1,5 +1,6 @@
 import {
   readSheet,
+  resolveColumns,
   toNum,
   toDate,
   str,
@@ -64,7 +65,9 @@ export function parseCuantoDebo(
     "CUENTA",
     "DESCRIPCION",
     "TOTAL",
-  ];
+  ] as const;
+  // Columnas por NOMBRE (no por posición); aborta si falta alguna esperada.
+  const col = resolveColumns(headers, HEAD, "Cuentas por Pagar");
 
   const parsedRows: ParsedRow<CuentaPorPagarData>[] = [];
   const periodosSet = new Set<string>();
@@ -72,13 +75,13 @@ export function parseCuantoDebo(
   rows.forEach((row, i) => {
     if (isBlankRow(row) || isTotalRow(row)) return;
 
-    const comprobante = str(row[0]);
-    const fecha = toDate(row[1]);
-    const noFactura = str(row[2]);
-    const proveedor = str(row[3]);
-    const cuenta = str(row[4]);
-    const descripcion = str(row[5]);
-    const total = row[6] == null || row[6] === "" ? null : toNum(row[6]);
+    const comprobante = str(row[col[0]]);
+    const fecha = toDate(row[col[1]]);
+    const noFactura = str(row[col[2]]);
+    const proveedor = str(row[col[3]]);
+    const cuenta = str(row[col[4]]);
+    const descripcion = str(row[col[5]]);
+    const total = row[col[6]] == null || row[col[6]] === "" ? null : toNum(row[col[6]]);
 
     const comprobanteNum = extraerComprobanteNum(comprobante);
 
@@ -95,7 +98,7 @@ export function parseCuantoDebo(
 
     const raw: Record<string, unknown> = {};
     HEAD.forEach((h, idx) => {
-      raw[headers[idx] ?? h] = row[idx] ?? null;
+      raw[h] = row[col[idx]] ?? null;
     });
 
     const alerts: Alerta[] = [];
