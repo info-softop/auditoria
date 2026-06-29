@@ -29,15 +29,36 @@ function common(row: ParsedRow<unknown>) {
   };
 }
 
+// Campos que NO son contenido del reporte (no entran en la huella).
+const META_FIELDS = new Set([
+  "id",
+  "importacionId",
+  "rowIndex",
+  "raw",
+  "alerts",
+  "hasAlert",
+  "createdAt",
+  "updatedAt",
+]);
+
+/** Normaliza un valor a texto estable, igual venga de un parse fresco o de la BD. */
+function normVal(v: unknown): string {
+  if (v == null) return "";
+  if (v instanceof Date) return v.toISOString(); // Date en ambos lados (parser y Prisma)
+  return String(v);
+}
+
 /**
- * Huella estable del CONTENIDO de una fila (su `raw` original del Excel). No
- * incluye rowIndex (la posición cambia entre archivos). Dos filas idénticas del
- * reporte producen la misma huella → permite detectar duplicados entre cargas.
+ * Huella estable del CONTENIDO de una fila a partir de sus campos TIPADOS (data
+ * o columnas de la BD). Antes se hasheaba el `raw` (JSON), pero ahí las fechas
+ * quedan como string mientras un parse fresco las trae como Date → no coincidían
+ * y se duplicaban. Usar los datos tipados (Date en ambos lados) lo hace robusto.
  */
-function rowHash(raw: Record<string, unknown>): string {
-  const norm = Object.keys(raw)
+function hashFromData(obj: Record<string, unknown>): string {
+  const norm = Object.keys(obj)
+    .filter((k) => !META_FIELDS.has(k))
     .sort()
-    .map((k) => `${k}=${raw[k] == null ? "" : String(raw[k])}`)
+    .map((k) => `${k}=${normVal(obj[k])}`)
     .join("|");
   return createHash("sha1").update(norm).digest("hex");
 }
@@ -49,29 +70,28 @@ async function huellasExistentes(
   periodo: string
 ): Promise<Set<string>> {
   const where = { importacion: { opticaId, periodo, tipoReporte } };
-  const select = { raw: true } as const;
-  let filas: { raw: unknown }[] = [];
+  let filas: Record<string, unknown>[] = [];
   switch (tipoReporte) {
     case "VENTA_DETALLADA":
-      filas = await db.ventaDetalladaRow.findMany({ where, select });
+      filas = await db.ventaDetalladaRow.findMany({ where });
       break;
     case "PEDIDO_LENTES":
-      filas = await db.pedidoLenteRow.findMany({ where, select });
+      filas = await db.pedidoLenteRow.findMany({ where });
       break;
     case "GASTOS":
-      filas = await db.gastoRow.findMany({ where, select });
+      filas = await db.gastoRow.findMany({ where });
       break;
     case "COMPROBANTES":
-      filas = await db.comprobanteRow.findMany({ where, select });
+      filas = await db.comprobanteRow.findMany({ where });
       break;
     case "PAGOS_PROVEEDORES":
-      filas = await db.pagoProveedorRow.findMany({ where, select });
+      filas = await db.pagoProveedorRow.findMany({ where });
       break;
     case "CUENTAS_POR_PAGAR":
-      filas = await db.cuentaPorPagarRow.findMany({ where, select });
+      filas = await db.cuentaPorPagarRow.findMany({ where });
       break;
   }
-  return new Set(filas.map((f) => rowHash((f.raw ?? {}) as Record<string, unknown>)));
+  return new Set(filas.map((f) => hashFromData(f)));
 }
 
 /**
@@ -94,7 +114,7 @@ export async function persistReport({
   const nuevas: ParsedRow<Record<string, unknown>>[] = [];
   let duplicadas = 0;
   for (const r of result.rows as ParsedRow<Record<string, unknown>>[]) {
-    const h = rowHash(r.raw);
+    const h = hashFromData(r.data);
     if (vistas.has(h)) {
       duplicadas++;
       continue;
