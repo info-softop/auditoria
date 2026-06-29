@@ -3,8 +3,23 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
+/** Lee una contraseña obligatoria desde el entorno; aborta si falta o es trivial. */
+function requirePassword(envVar: string): string {
+  const value = process.env[envVar];
+  if (!value || value.trim().length < 8) {
+    throw new Error(
+      `Falta ${envVar} (o tiene menos de 8 caracteres). Define contraseñas fuertes ` +
+        `antes de correr el seed, por ejemplo:\n` +
+        `  SEED_ADMIN_PASSWORD='...' SEED_AUDITOR_PASSWORD='...' npm run db:seed`
+    );
+  }
+  return value;
+}
+
 async function main() {
-  const passwordHash = await bcrypt.hash("admin123", 10);
+  // Sin contraseñas por defecto: se leen del entorno y, si faltan, el seed aborta.
+  const adminPassword = requirePassword("SEED_ADMIN_PASSWORD");
+  const auditorPassword = requirePassword("SEED_AUDITOR_PASSWORD");
 
   await db.user.upsert({
     where: { email: "admin@softop.la" },
@@ -12,7 +27,7 @@ async function main() {
     create: {
       email: "admin@softop.la",
       name: "Administrador",
-      password: passwordHash,
+      password: await bcrypt.hash(adminPassword, 10),
       role: "ADMIN",
     },
   });
@@ -23,7 +38,7 @@ async function main() {
     create: {
       email: "auditor@softop.la",
       name: "Auditor Demo",
-      password: await bcrypt.hash("auditor123", 10),
+      password: await bcrypt.hash(auditorPassword, 10),
       role: "AUDITOR",
     },
   });
