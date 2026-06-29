@@ -111,7 +111,7 @@ export async function POST(req: Request) {
   const importacionesCreadas: string[] = [];
   const opticasAfectadas = new Set<string>();
   let totalInsertadas = 0;
-  let totalDuplicadas = 0;
+  let totalReemplazadas = 0;
 
   for (const { opticaId, periodo, rows } of grupos.values()) {
     const res = await persistReport({
@@ -124,8 +124,7 @@ export async function POST(req: Request) {
     });
     if (res.imp) importacionesCreadas.push(res.imp.id);
     totalInsertadas += res.insertadas;
-    totalDuplicadas += res.duplicadas;
-    // La óptica se reprocesa aunque todo fueran duplicados (cruces idempotentes).
+    totalReemplazadas += res.reemplazadas;
     opticasAfectadas.add(opticaId);
   }
 
@@ -148,7 +147,7 @@ export async function POST(req: Request) {
     importaciones: importacionesCreadas,
     grupos: grupos.size,
     insertadas: totalInsertadas,
-    duplicadas: totalDuplicadas,
+    reemplazadas: totalReemplazadas,
     periodos: [...new Set([...grupos.values()].map((g) => g.periodo))].sort(),
   });
 }

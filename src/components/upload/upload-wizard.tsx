@@ -119,14 +119,10 @@ export function UploadWizard({
         return;
       }
       const ins = json.insertadas ?? 0;
-      const dup = json.duplicadas ?? 0;
-      if (ins === 0 && dup > 0) {
-        toast.info(`Nada nuevo: las ${dup} filas ya estaban cargadas.`);
-      } else {
-        toast.success(
-          `Cargadas ${ins} filas nuevas${dup > 0 ? ` · ${dup} repetidas omitidas` : ""}.`
-        );
-      }
+      const rep = json.reemplazadas ?? 0;
+      toast.success(
+        `Cargadas ${ins} filas${rep > 0 ? ` · reemplazaron ${rep} de una carga anterior de este período` : ""}.`
+      );
       router.push("/auditorias");
       router.refresh();
     } finally {
