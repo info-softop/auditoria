@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "TipoCruce" ADD VALUE 'A_CUADRE_ORDEN';

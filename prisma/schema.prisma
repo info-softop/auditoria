@@ -1,0 +1,562 @@
+// Plataforma de Auditoría Softop — Ópticas
+// Postgres local. Cada óptica sube 6 reportes por período (YYYY-MM).
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  // "native" = la plataforma del build local; el target de Debian es para el
+  // contenedor de Cloud Run (Node slim/bookworm con OpenSSL 3).
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  AUDITOR
+  VIEWER
+}
+
+enum TipoReporte {
+  VENTA_DETALLADA
+  PEDIDO_LENTES
+  GASTOS
+  COMPROBANTES
+  PAGOS_PROVEEDORES
+  CUENTAS_POR_PAGAR
+}
+
+enum Severidad {
+  ALTA
+  MEDIA
+  BAJA
+}
+
+enum TipoCruce {
+  A_CUADRE_ORDEN
+  B_COSTO_LENTE
+  C_CUENTAS_PAGAR
+  D_PAGO_LABORATORIO
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  password     String
+  role         Role          @default(AUDITOR)
+  createdAt    DateTime      @default(now())
+  importaciones Importacion[]
+  fotos        ConsignacionFoto[]
+  alertasDescartadas AlertaDescartada[]
+  alertasSeveridad   AlertaSeveridad[]
+  registros    RegistroAuditoria[]
+}
+
+// Alerta descartada por un usuario (se oculta de la lista activa, pero queda
+// el registro de quién, cuándo y por qué). alertaKey identifica la alerta.
+model AlertaDescartada {
+  id          String   @id @default(cuid())
+  alertaKey   String   @unique
+  optica      String?
+  periodo     String?
+  orden       String?
+  tipo        String?
+  mensaje     String?
+  motivo      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Reclasificación de severidad de una alerta por un usuario (con registro).
+model AlertaSeveridad {
+  id        String    @id @default(cuid())
+  alertaKey String    @unique
+  severidad Severidad
+  optica    String?
+  periodo   String?
+  orden     String?
+  tipo      String?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Bitácora general de acciones de usuarios (auditoría de la plataforma).
+model RegistroAuditoria {
+  id        String   @id @default(cuid())
+  accion    String // ej. "descartar_alerta", "restaurar_alerta"
+  detalle   String? // descripción legible
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Optica {
+  id            String        @id @default(cuid())
+  nombre        String        @unique
+  grupo         String
+  codigoInterno String?
+  activa        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  importaciones Importacion[]
+  metas         Meta[]
+  alertasCruce  AlertaCruce[]
+  trasladosPublicos TrasladoPublico[]
+  empleados     Empleado[]
+  cuentasBancarias CuentaBancaria[]
+  gastos        Gasto[]
+}
+
+// FINANZAS — Tesorería de bancos (alineado con softop-administrador
+// BankAccount/BankMovement). Saldo del día = saldoInicial + Σ ingresos − Σ egresos.
+model CuentaBancaria {
+  id                String    @id @default(cuid())
+  nombre            String
+  bankCode          String? // ej. BANCOLOMBIA, BANCO_BOGOTA, WOMPI
+  tipoCuenta        String    @default("bank") // bank (cuenta real) | gateway (pasarela)
+  numeroCuenta      String?
+  moneda            String    @default("COP")
+  activa            Boolean   @default(true)
+  sortOrder         Int       @default(0)
+  notas             String?
+  saldoInicial      Float     @default(0)
+  saldoInicialFecha DateTime?
+  opticaId          String?
+  optica            Optica?   @relation(fields: [opticaId], references: [id])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  movimientos MovimientoBancario[]
+  gastos      Gasto[]
+
+  @@index([opticaId])
+}
+
+// Ledger de movimientos (ingresos/egresos) por cuenta. Saldo auditable.
+model MovimientoBancario {
+  id         String         @id @default(cuid())
+  cuentaId   String
+  cuenta     CuentaBancaria @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  fecha      DateTime
+  direccion  String // in (ingreso) | out (egreso)
+  monto      Float
+  concepto   String
+  categoria  String?
+  origen     String         @default("manual") // manual | pago | gasto | extracto | traslado
+  conciliado Boolean        @default(false)
+  notas      String?
+  createdAt  DateTime       @default(now())
+
+  @@index([cuentaId, fecha])
+}
+
+// RRHH — modelo alineado con softop-administrador (Employee + Cargo), adaptado
+// a esta app (Colombia/COP, vinculado a Óptica).
+model Cargo {
+  id        String     @id @default(cuid())
+  nombre    String
+  area      String?
+  sortOrder Int        @default(0)
+  activo    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  empleados Empleado[]
+}
+
+model Empleado {
+  id                   String    @id @default(cuid())
+  codigo               String? // código interno (suele ser la cédula)
+  tipoEmpleado         String    @default("dependiente") // dependiente | independiente
+  tipoIdentificacion   String    @default("CC") // CC | CE | PA | TI
+  numeroIdentificacion String?
+  tipoContrato         String    @default("indefinido") // indefinido|fijo|obra_labor|prestacion_servicios|aprendizaje
+
+  nombre          String
+  primerApellido  String?
+  segundoApellido String?
+
+  telefono      String?
+  correo        String?
+  fechaAdmision DateTime?
+  municipalidad String?
+  direccion     String?
+
+  // Pago
+  metodoPago   String  @default("transferencia_debito") // transferencia_debito|efectivo|cheque
+  bancoNombre  String?
+  tipoCuenta   String? // ahorro | corriente
+  numeroCuenta String?
+
+  // Remuneración
+  salario                 Float?
+  subsidioTransporte      Boolean @default(false)
+  subsidioTransporteValor Float?
+  pensionAltoRiesgo       Boolean @default(false)
+  salarioIntegral         Boolean @default(false)
+
+  cargoId  String?
+  cargo    Cargo?  @relation(fields: [cargoId], references: [id], onDelete: SetNull)
+  opticaId String?
+  optica   Optica? @relation(fields: [opticaId], references: [id])
+
+  pagosNomina PagoNomina[]
+  vacaciones  Vacacion[]
+  gastos      Gasto[]
+
+  estado       String    @default("activo") // activo | inactivo
+  fechaRetiro  DateTime?
+  motivoRetiro String?
+  notas        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado])
+  @@index([cargoId])
+  @@index([opticaId])
+}
+
+// Pago de nómina de un empleado en un período (mensual o por quincena).
+// neto = salarioBase + subsidioTransporte + bonos − deducciones.
+model PagoNomina {
+  id                 String   @id @default(cuid())
+  empleadoId         String
+  empleado           Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  periodo            String // YYYY-MM
+  quincena           Int? // 1 (1-15) | 2 (16-fin) | null = mensual
+  salarioBase        Float
+  subsidioTransporte Float    @default(0)
+  bonos              Float    @default(0)
+  deducciones        Float    @default(0)
+  neto               Float
+  fechaPago          DateTime
+  notas              String?
+  createdAt          DateTime @default(now())
+
+  @@index([empleadoId])
+  @@index([periodo])
+}
+
+// FINANZAS — Ledger de gastos editable (alineado con Expense de softop-administrador).
+// Al marcarse "pagado" con una cuenta, genera un egreso en el ledger de tesorería.
+model Gasto {
+  id           String    @id @default(cuid())
+  fechaVence   DateTime // fecha esperada de pago (corte)
+  fechaPago    DateTime? // fecha real del pago (null si pendiente)
+  concepto     String
+  categoria    String // NOMINA, VIATICOS, ARRIENDO, etc.
+  subcategoria String?
+  monto        Float
+  estado       String    @default("pendiente") // pendiente | pagado | cancelado
+  tercero      String? // quien recibe el pago
+  terceroId    String? // CC/NIT del beneficiario
+
+  empleadoId String?
+  empleado   Empleado? @relation(fields: [empleadoId], references: [id], onDelete: SetNull)
+  opticaId   String?
+  optica     Optica?   @relation(fields: [opticaId], references: [id])
+
+  cuentaBancariaId String?
+  cuenta           CuentaBancaria? @relation(fields: [cuentaBancariaId], references: [id], onDelete: SetNull)
+  movimientoId     String? // movimiento bancario generado al pagar
+
+  origen   String  @default("manual") // manual | nomina
+  sourceId String? // id del PagoNomina origen (idempotencia)
+  notas    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado])
+  @@index([categoria])
+  @@index([empleadoId])
+}
+
+// Movimiento de vacaciones (días tomados / pagados / ajuste) de un empleado.
+// Saldo = causadas (1.25 días/mes desde admisión) − tomadas/pagadas ± ajustes.
+model Vacacion {
+  id          String    @id @default(cuid())
+  empleadoId  String
+  empleado    Empleado  @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  tipo        String // tomada | pagada | ajuste
+  dias        Float
+  fechaInicio DateTime?
+  fechaFin    DateTime?
+  nota        String?
+  createdAt   DateTime  @default(now())
+
+  @@index([empleadoId])
+}
+
+// Traslado/consignación registrado desde el LINK PÚBLICO (sin login): una
+// asesora sube valor + óptica + foto del comprobante. El auditor lo revisa y
+// luego lo enlaza con el ComprobanteRow correspondiente.
+model TrasladoPublico {
+  id            String    @id @default(cuid())
+  opticaId      String
+  optica        Optica    @relation(fields: [opticaId], references: [id])
+  valor         Float
+  fileUrl       String
+  fecha         DateTime? // fecha de la consignación (opcional)
+  registradoPor String? // nombre de quien registra (texto libre, no hay sesión)
+  observacion   String?
+  revisado      Boolean   @default(false)
+  comprobanteId String? // enlace posterior con el ComprobanteRow conciliado
+  createdAt     DateTime  @default(now())
+
+  @@index([opticaId])
+  @@index([revisado])
+}
+
+// Una carga de un archivo Excel de un tipo de reporte, para una óptica + período.
+model Importacion {
+  id             String      @id @default(cuid())
+  opticaId       String
+  optica         Optica      @relation(fields: [opticaId], references: [id])
+  periodo        String // "YYYY-MM"
+  tipoReporte    TipoReporte
+  fileName       String
+  uploadedById   String
+  uploadedBy     User        @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime    @default(now())
+  totalFilas     Int         @default(0)
+  filasConAlerta Int         @default(0)
+
+  ventas        VentaDetalladaRow[]
+  pedidos       PedidoLenteRow[]
+  gastos        GastoRow[]
+  comprobantes  ComprobanteRow[]
+  pagos         PagoProveedorRow[]
+  cuentasPorPagar CuentaPorPagarRow[]
+
+  @@index([opticaId, periodo, tipoReporte])
+}
+
+// ── Filas tipadas por reporte ───────────────────────────────
+// Cada una guarda `raw` (fila completa Json) y `alerts` (Json: {campo,severidad,tipo,mensaje}[])
+
+model VentaDetalladaRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  optica        String
+  grupo         String?
+  fecha         DateTime?
+  hora          String?
+  tipoDocumento String?
+  consecutivo   String?     // Orden de Venta — llave de cruce
+  tipoMovimiento String?
+  atendidoPor   String?
+  optometra     String?
+  estado        String?
+  codigoSucursal String?
+  documento     String?
+  nombres       String?
+  telefono      String?
+  motivoVisita  String?
+  idProducto    String?     // llave de cruce
+  tipoProducto  String?
+  categoria     String?
+  referencia    String?
+  marca         String?
+  cantidad      Float?
+  precioLista   Float?
+  costoCompra   Float?
+  descuento     Float?
+  precioVenta   Float?
+  metodoPago    String?
+  autorizacion  String?
+  factura       String?
+  ventasTotales Float?
+  saldoAnterior Float?
+  abono         Float?
+  abonoReciboCaja Float?
+  abonoReciboCajaEmp Float?
+  totalRecaudo  Float?
+  valorCanje    Float?
+  saldoActual   Float?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  @@index([importacionId])
+  @@index([consecutivo, idProducto])
+}
+
+model PedidoLenteRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  pedidoId      String?     // ID
+  orden         String?     // == consecutivo Venta Detallada
+  fechaEntrega  String?     // puede ser "NO"
+  producto      String?     // "ID - Nombre"
+  productoId    String?     // ID extraído del producto
+  laboratorio   String?     // proveedor
+  ordenLaboratorio String?
+  factura       String?
+  fechaOrden    DateTime?
+  valor         Float?      // COSTO REAL del lente
+  estado        String?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  @@index([importacionId])
+  @@index([orden, productoId])
+}
+
+model GastoRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  noGastos      String?
+  factura       String?
+  fecha         DateTime?
+  estado        String?
+  cuenta        String?
+  descripcion   String?
+  descripcionCuenta String?
+  tercero       String?
+  valor         Float?
+  dc            String?     // 'D' o 'C'
+  total         Float?
+  abono         Float?
+  saldo         Float?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  @@index([importacionId])
+}
+
+model ComprobanteRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  noComprobante String?     // llave del traslado
+  factura       String?
+  fecha         DateTime?
+  tipoComprobante String?
+  formaPago     String?
+  cuenta        String?
+  descripcion   String?
+  suc           String?
+  tercero       String?
+  debito        Float?
+  credito       Float?
+  total         Float?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  fotos         ConsignacionFoto[]
+
+  @@index([importacionId])
+  @@index([noComprobante])
+}
+
+model PagoProveedorRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  pago          String?     // agrupa el comprobante de pago
+  fecha         DateTime?
+  observaciones String?
+  comprobante   String?     // de la compra (cruza con CuentaPorPagar)
+  noFactura     String?
+  proveedor     String?
+  cuenta        String?
+  descripcion   String?
+  debito        Float?
+  credito       Float?
+  usuario       String?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  @@index([importacionId])
+  @@index([comprobante, noFactura, proveedor])
+}
+
+model CuentaPorPagarRow {
+  id            String      @id @default(cuid())
+  importacionId String
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+  rowIndex      Int
+  comprobante   String?     // "Compra - N"
+  comprobanteNum String?    // N extraído
+  fecha         DateTime?
+  noFactura     String?
+  proveedor     String?
+  cuenta        String?
+  descripcion   String?
+  total         Float?
+  raw           Json
+  alerts        Json        @default("[]")
+  hasAlert      Boolean     @default(false)
+
+  @@index([importacionId])
+  @@index([comprobanteNum, noFactura, proveedor])
+}
+
+// ── Alertas de cruce entre reportes (B, C, D) ──────────────
+model AlertaCruce {
+  id        String    @id @default(cuid())
+  opticaId  String
+  optica    Optica    @relation(fields: [opticaId], references: [id])
+  periodo   String
+  tipoCruce TipoCruce
+  severidad Severidad
+  mensaje   String
+  refs      Json // referencias a las filas/órdenes involucradas
+  createdAt DateTime  @default(now())
+
+  @@index([opticaId, periodo])
+}
+
+// ── Metas y rendimiento ────────────────────────────────────
+// La meta es por RECAUDO, escalonada en 3 niveles de comisión: 1.0%, 1.5%, 2.0%.
+// La asesora cobra según el nivel de recaudo que alcance. La meta mensual se
+// reparte en los días laborables (lun–sáb) para obtener la meta diaria.
+model Meta {
+  id            String   @id @default(cuid())
+  opticaId      String
+  optica        Optica   @relation(fields: [opticaId], references: [id])
+  periodo       String // "YYYY-MM"
+  recaudoNivel1 Float    @default(0) // recaudo objetivo para comisión 1.0%
+  recaudoNivel2 Float    @default(0) // recaudo objetivo para comisión 1.5%
+  recaudoNivel3 Float    @default(0) // recaudo objetivo para comisión 2.0%
+  updatedAt     DateTime @updatedAt
+
+  @@unique([opticaId, periodo])
+}
+
+// ── Verificación de consignaciones con foto ────────────────
+model ConsignacionFoto {
+  id            String         @id @default(cuid())
+  comprobanteId String
+  comprobante   ComprobanteRow @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  fileUrl       String
+  uploadedById  String
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+  uploadedAt    DateTime       @default(now())
+
+  @@index([comprobanteId])
+}

@@ -39,3 +39,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Muestras y subidas locales
+/samples/
+/public/uploads/
+
+# Capturas / artefactos
+*.png
+# …pero los logos de marca y el favicon SÍ van al repo (los usa la app)
+!/public/brand/*.png
+!/src/app/icon.png
+/.playwright-mcp/
+
+# Cliente Prisma generado (binarios pesados; se regenera con `prisma generate`)
+/src/generated/

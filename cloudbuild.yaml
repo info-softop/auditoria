@@ -1,0 +1,109 @@
+# Cloud Build — Auditoría Softop (mismo proyecto que softop-administrador).
+# Trigger sugerido: push a main → build → push Artifact Registry → migrar → deploy.
+#
+# Substitutions del trigger (valores reales del entorno actual):
+#   _REGION:         us-central1
+#   _ARTIFACT_REPO:  auditoria            (Artifact Registry repo)
+#   _SERVICE_NAME:   auditoria            (Cloud Run service)
+#   _CLOUD_SQL_CONN: divine-actor-288515:us-central1:softop-pg
+#   _BUCKET:         softop-admin-prod-auditoria-uploads
+#
+# Secrets en Secret Manager (prefijados para no chocar con softop-admin):
+#   AUDITORIA_AUTH_SECRET, AUDITORIA_DATABASE_URL
+
+steps:
+  # 1. Build imagen web (standalone)
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:latest
+      - -f
+      - Dockerfile
+      - .
+
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:${SHORT_SHA}"]
+    waitFor: [build]
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:latest"]
+    waitFor: [build]
+
+  # 2. Build + push imagen migrator (target migrator del Dockerfile)
+  - id: build-migrator
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - migrator
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/migrator:${SHORT_SHA}
+      - -f
+      - Dockerfile
+      - .
+    waitFor: [build]
+  - id: push-migrator
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/migrator:${SHORT_SHA}"]
+    waitFor: [build-migrator]
+
+  # 3. Migrar la BD (Cloud Run Job) ANTES del deploy. Si falla, no se despliega.
+  - id: migrate
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - auditoria-migrate
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/migrator:${SHORT_SHA}
+      - --region=${_REGION}
+      - --add-cloudsql-instances=${_CLOUD_SQL_CONN}
+      - --set-secrets=DATABASE_URL=AUDITORIA_DATABASE_URL:latest
+      - --max-retries=1
+      - --task-timeout=600
+      - --execute-now
+      - --wait
+    waitFor: [push-migrator]
+
+  # 4. Deploy a Cloud Run
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --cpu=1
+      - --memory=512Mi
+      - --min-instances=0
+      - --max-instances=4
+      - --concurrency=80
+      - --timeout=300
+      - --add-cloudsql-instances=${_CLOUD_SQL_CONN}
+      - --set-env-vars=NODE_ENV=production,AUTH_TRUST_HOST=true,GCS_BUCKET=${_BUCKET}
+      - --set-secrets=AUTH_SECRET=AUDITORIA_AUTH_SECRET:latest,DATABASE_URL=AUDITORIA_DATABASE_URL:latest
+    waitFor: [migrate]
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/web:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-central1
+  _ARTIFACT_REPO: auditoria
+  _SERVICE_NAME: auditoria
+  _CLOUD_SQL_CONN: divine-actor-288515:us-central1:softop-pg
+  _BUCKET: auditoria_opticas
