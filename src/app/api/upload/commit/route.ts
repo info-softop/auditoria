@@ -2,22 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { detectReportType, parseReport } from "@/lib/parsers/detect";
 import { readSheet, periodoFromDate } from "@/lib/parsers/utils";
-import { persistReport } from "@/lib/persist";
+import { persistReport, DATE_FIELD } from "@/lib/persist";
 import { db } from "@/lib/db";
 import { runCrossChecks } from "@/lib/cross-checks";
 import { detectOpticaFromFilename } from "@/lib/optica-from-filename";
-import type { TipoReporte } from "@/lib/audit-types";
 import type { ParsedRow } from "@/lib/parsers/types";
-
-// Campo de fecha por tipo de reporte, para derivar el período de cada fila.
-const DATE_FIELD: Record<TipoReporte, string> = {
-  VENTA_DETALLADA: "fecha",
-  PEDIDO_LENTES: "fechaOrden",
-  GASTOS: "fecha",
-  COMPROBANTES: "fecha",
-  PAGOS_PROVEEDORES: "fecha",
-  CUENTAS_POR_PAGAR: "fecha",
-};
 
 // Confirma la carga: separa las filas por (óptica × mes real) y persiste cada grupo.
 export async function POST(req: Request) {

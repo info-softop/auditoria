@@ -28,13 +28,40 @@ function common(row: ParsedRow<unknown>) {
   };
 }
 
+/** Campo de fecha por tipo de reporte (deriva el período y los días a reemplazar). */
+export const DATE_FIELD: Record<TipoReporte, string> = {
+  VENTA_DETALLADA: "fecha",
+  PEDIDO_LENTES: "fechaOrden",
+  GASTOS: "fecha",
+  COMPROBANTES: "fecha",
+  PAGOS_PROVEEDORES: "fecha",
+  CUENTAS_POR_PAGAR: "fecha",
+};
+
+/** Relación de filas en Importacion por tipo (para limpiar importaciones vacías). */
+const REL_FIELD: Record<TipoReporte, string> = {
+  VENTA_DETALLADA: "ventas",
+  PEDIDO_LENTES: "pedidos",
+  GASTOS: "gastos",
+  COMPROBANTES: "comprobantes",
+  PAGOS_PROVEEDORES: "pagos",
+  CUENTAS_POR_PAGAR: "cuentasPorPagar",
+};
+
+/** Medianoche UTC del día de una fecha (para agrupar por día calendario). */
+function diaUTC(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 /**
- * Persiste un reporte parseado REEMPLAZANDO lo cargado del mismo (óptica,
- * período, tipo): borra las importaciones previas de ese grupo (cascade borra sus
- * filas) y carga el archivo nuevo completo. Es el modelo correcto para Softop,
- * que reexporta el mismo período con saldos/valores actualizados — así el último
- * archivo siempre manda y nunca se duplican datos. Subir el mes completo es la
- * forma esperada de actualizar un período.
+ * Persiste un reporte parseado REEMPLAZANDO SOLO LOS DÍAS presentes en el archivo
+ * (no todo el mes). Para el (óptica, período, tipo) dado: borra las filas
+ * existentes cuyos días estén en el archivo y carga las nuevas. Así:
+ *  - Subir un rango (ej. 29 jun–1 jul) actualiza solo esos días; el resto del mes
+ *    se conserva (no se pierde lo no incluido).
+ *  - Subir el mes completo reemplaza todo (todos sus días están en el archivo).
+ *  - Softop reexporta con saldos/valores actualizados: dentro de los días subidos,
+ *    el último archivo manda (no se duplica).
  */
 export async function persistReport({
   opticaId,
@@ -53,16 +80,64 @@ export async function persistReport({
 
   const filasConAlerta = rows.filter((r) => r.alerts.length > 0).length;
 
-  const { imp, reemplazadas } = await db.$transaction(async (tx) => {
-    // REEMPLAZAR: borra lo cargado antes para este (óptica, período, tipo).
-    // El onDelete:Cascade de cada *Row borra sus filas automáticamente.
-    const previas = await tx.importacion.findMany({
-      where: { opticaId, periodo, tipoReporte },
-      select: { totalFilas: true },
-    });
-    const reemplazadas = previas.reduce((s, p) => s + p.totalFilas, 0);
-    await tx.importacion.deleteMany({ where: { opticaId, periodo, tipoReporte } });
+  // Días presentes en el archivo (por el campo de fecha del tipo de reporte).
+  const dateField = DATE_FIELD[tipoReporte];
+  const diasMap = new Map<number, Date>();
+  let hayFechaNula = false;
+  for (const r of rows) {
+    const v = r.data[dateField];
+    if (v instanceof Date && !Number.isNaN(v.getTime())) {
+      const t = diaUTC(v);
+      if (!diasMap.has(t)) diasMap.set(t, new Date(t));
+    } else {
+      hayFechaNula = true;
+    }
+  }
+  const dias = [...diasMap.values()];
 
+  const { imp, reemplazadas } = await db.$transaction(async (tx) => {
+    // 1) Reemplazar SOLO los días del archivo: borra las filas existentes de esos
+    //    días (y las de fecha nula si el archivo trae filas sin fecha).
+    let reemplazadas = 0;
+    const relImp = { importacion: { opticaId, periodo, tipoReporte } };
+    const orFecha = (campo: "fecha" | "fechaOrden") => [
+      { [campo]: { in: dias } },
+      ...(hayFechaNula ? [{ [campo]: null }] : []),
+    ];
+    switch (tipoReporte) {
+      case "VENTA_DETALLADA":
+        reemplazadas = (await tx.ventaDetalladaRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fecha") },
+        })).count;
+        break;
+      case "PEDIDO_LENTES":
+        reemplazadas = (await tx.pedidoLenteRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fechaOrden") },
+        })).count;
+        break;
+      case "GASTOS":
+        reemplazadas = (await tx.gastoRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fecha") },
+        })).count;
+        break;
+      case "COMPROBANTES":
+        reemplazadas = (await tx.comprobanteRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fecha") },
+        })).count;
+        break;
+      case "PAGOS_PROVEEDORES":
+        reemplazadas = (await tx.pagoProveedorRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fecha") },
+        })).count;
+        break;
+      case "CUENTAS_POR_PAGAR":
+        reemplazadas = (await tx.cuentaPorPagarRow.deleteMany({
+          where: { ...relImp, OR: orFecha("fecha") },
+        })).count;
+        break;
+    }
+
+    // 2) Crear la importación nueva e insertar las filas del archivo.
     const importacion = await tx.importacion.create({
       data: {
         opticaId,
@@ -110,6 +185,17 @@ export async function persistReport({
         });
         break;
     }
+
+    // 3) Limpiar importaciones del período que quedaron SIN filas (todos sus días
+    //    fueron reemplazados). La recién creada tiene filas, no se borra.
+    await tx.importacion.deleteMany({
+      where: {
+        opticaId,
+        periodo,
+        tipoReporte,
+        [REL_FIELD[tipoReporte]]: { none: {} },
+      } as Prisma.ImportacionWhereInput,
+    });
 
     return { imp: importacion, reemplazadas };
   });
