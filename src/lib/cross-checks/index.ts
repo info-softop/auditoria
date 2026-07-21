@@ -97,14 +97,18 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
     await db.ventaDetalladaRow.updateMany({
       where: {
         importacionId: ventaImpId,
-        tipoMovimiento: { not: "Venta" },
+        // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
+        tipoMovimiento: { not: "Venta", mode: "insensitive" },
         hasAlert: true,
       },
       data: { alerts: [], hasAlert: false },
     });
 
     const ventas = await db.ventaDetalladaRow.findMany({
-      where: { importacionId: ventaImpId, tipoMovimiento: "Venta" },
+      where: {
+        importacionId: ventaImpId,
+        tipoMovimiento: { equals: "Venta", mode: "insensitive" },
+      },
       select: {
         id: true,
         consecutivo: true,

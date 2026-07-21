@@ -31,7 +31,8 @@ export async function ventaKpis(
   const whereTodas: Prisma.VentaDetalladaRowWhereInput = { importacion: base };
   const whereVenta: Prisma.VentaDetalladaRowWhereInput = {
     importacion: base,
-    tipoMovimiento: "Venta",
+    // Insensible a mayúsculas: Softop puede exportar "VENTA"/"venta" (P-2).
+    tipoMovimiento: { equals: "Venta", mode: "insensitive" },
   };
 
   const [aggOrden, lineasAgg, porOrden] = await Promise.all([

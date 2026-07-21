@@ -82,7 +82,8 @@ export async function analisisComercial(
   const rows = await db.ventaDetalladaRow.findMany({
     where: {
       importacion: { periodo, tipoReporte: "VENTA_DETALLADA", ...(opticaId ? { opticaId } : {}) },
-      tipoMovimiento: "Venta",
+      // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
+      tipoMovimiento: { equals: "Venta", mode: "insensitive" },
     },
     select: {
       atendidoPor: true,

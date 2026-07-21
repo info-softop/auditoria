@@ -36,7 +36,8 @@ export async function ingresosPorCuenta(
         ...(opticaId ? { opticaId } : {}),
       },
       // Solo líneas de venta (las filas "Abono" repiten los productos).
-      tipoMovimiento: "Venta",
+      // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
+      tipoMovimiento: { equals: "Venta", mode: "insensitive" },
     },
     _sum: { precioVenta: true },
   });

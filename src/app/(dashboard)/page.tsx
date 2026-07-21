@@ -53,7 +53,8 @@ export default async function ResumenPage({
     db.ventaDetalladaRow.count({ where: { ...ventaWhere, hasAlert: true } }),
     db.ventaDetalladaRow.findMany({
       // Solo líneas de venta: las filas "Abono" repiten productos/precios.
-      where: { ...ventaWhere, tipoMovimiento: "Venta" },
+      // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
+      where: { ...ventaWhere, tipoMovimiento: { equals: "Venta", mode: "insensitive" } },
       select: {
         optica: true,
         fecha: true,
