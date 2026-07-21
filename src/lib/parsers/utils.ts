@@ -22,12 +22,34 @@ export function readSheet(buffer: Buffer | ArrayBuffer): RawSheet {
   return { sheetName, headers, rows };
 }
 
-/** Parsea un valor a número. Tolera strings con comas de miles y vacíos. */
+/**
+ * Parsea un valor a número. Tolera vacíos (→ 0) y no-numéricos (→ 0).
+ *
+ * Para strings usa parseo locale-aware (formato colombiano: coma = decimal,
+ * punto = miles), sin romper el formato anglosajón:
+ *  - '.' y ',' presentes → el ÚLTIMO separador es el decimal; el otro, de miles.
+ *  - solo ',' → decimal (coma colombiana).
+ *  - solo '.' (o sin separadores) → se deja tal cual (punto = decimal).
+ *
+ * La rama `typeof x === "number"` devuelve el número tal cual (sin tocar): XLSX ya
+ * entrega las celdas numéricas como number, este es el caso normal.
+ */
 export function toNum(x: unknown): number {
   if (x == null || x === "") return 0;
   if (typeof x === "number") return Number.isFinite(x) ? x : 0;
-  const cleaned = String(x).replace(/\s/g, "").replace(/,/g, "");
-  const n = parseFloat(cleaned);
+
+  let s = String(x).replace(/\s/g, "");
+  const hasDot = s.includes(".");
+  const hasComma = s.includes(",");
+  if (hasDot && hasComma) {
+    const decimalSep = s.lastIndexOf(",") > s.lastIndexOf(".") ? "," : ".";
+    const thousandsSep = decimalSep === "," ? "." : ",";
+    s = s.split(thousandsSep).join("").replace(decimalSep, ".");
+  } else if (hasComma) {
+    s = s.replace(",", ".");
+  }
+
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
 }
 
