@@ -28,11 +28,14 @@ export function ReportChecklist({
   periodos,
   opticas,
   cargados,
+  ultimaFecha,
 }: {
   periodos: string[];
   opticas: Optica[];
   // clave `${periodo}|${opticaId}` -> tipos cargados
   cargados: Record<string, TipoReporte[]>;
+  // clave `${periodo}|${tipo}` -> última fecha de dato (YYYY-MM-DD)
+  ultimaFecha: Record<string, string>;
 }) {
   const [periodo, setPeriodo] = useState(periodos[0] ?? "");
 
@@ -89,9 +92,18 @@ export function ReportChecklist({
 
         {/* Detalle: cada reporte con su estado por óptica */}
         <div className="space-y-2">
-          {TIPO_REPORTE_ORDEN.map((tipo) => (
+          {TIPO_REPORTE_ORDEN.map((tipo) => {
+            const ult = ultimaFecha[`${periodo}|${tipo}`];
+            return (
             <div key={tipo} className="rounded-lg border p-3">
-              <p className="text-sm font-medium">{TIPO_REPORTE_LABEL[tipo]}</p>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-medium">{TIPO_REPORTE_LABEL[tipo]}</p>
+                {ult && (
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                    hasta {ult.split("-").reverse().join("/")}
+                  </span>
+                )}
+              </div>
               <p className="mb-2 text-xs text-muted-foreground">
                 {TIPO_REPORTE_ORIGEN[tipo]}
               </p>
@@ -119,7 +131,8 @@ export function ReportChecklist({
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>

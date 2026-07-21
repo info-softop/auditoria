@@ -136,7 +136,7 @@ export default async function GastosPage({
       </form>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <KpiCard label="Total del mes" value={formatCOP(totalMes)} icon={Receipt} />
+        <KpiCard label="Total del mes" value={formatCOP(totalMes + totalOperativo)} icon={Receipt} />
         <KpiCard label="Pendiente" value={formatCOP(pendiente)} icon={Wallet} tone="alta" />
         <KpiCard label="Pagado" value={formatCOP(pagado)} icon={CircleCheck} tone="success" />
       </div>
@@ -240,7 +240,7 @@ export default async function GastosPage({
             Gastos operativos <span className="text-muted-foreground">(reporte subido)</span>
           </h2>
           <span className="text-sm text-muted-foreground">
-            Total del mes:{" "}
+            Total operativo:{" "}
             <span className="font-medium text-foreground tabular-nums-fin">
               {formatCOP(totalOperativo)}
             </span>
