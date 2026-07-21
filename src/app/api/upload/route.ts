@@ -5,6 +5,7 @@ import { readSheet } from "@/lib/parsers/utils";
 import { TIPO_REPORTE_LABEL } from "@/lib/audit-types";
 import { db } from "@/lib/db";
 import { detectOpticaFromFilename } from "@/lib/optica-from-filename";
+import { DATE_FIELD } from "@/lib/persist";
 
 // Vista previa: detecta tipo y parsea, SIN persistir.
 export async function POST(req: Request) {
@@ -44,6 +45,21 @@ export async function POST(req: Request) {
 
   const result = parseReport(tipoReporte, buffer);
   const filasConAlerta = result.rows.filter((r) => r.alerts.length > 0).length;
+
+  // Rango de fechas de los datos (para mostrar hasta qué día llega el archivo).
+  const dateField = DATE_FIELD[tipoReporte];
+  let desde: Date | null = null;
+  let hasta: Date | null = null;
+  for (const r of result.rows) {
+    const v = (r.data as unknown as Record<string, unknown>)[dateField];
+    if (v instanceof Date && !Number.isNaN(v.getTime())) {
+      if (!desde || v < desde) desde = v;
+      if (!hasta || v > hasta) hasta = v;
+    }
+  }
+  const rango = hasta
+    ? { desde: desde!.toISOString().slice(0, 10), hasta: hasta.toISOString().slice(0, 10) }
+    : null;
 
   // Para reportes sin columna óptica, detectar la óptica por el ID en el nombre.
   const opticaDetectada =
@@ -88,6 +104,7 @@ export async function POST(req: Request) {
     tipoLabel: TIPO_REPORTE_LABEL[tipoReporte],
     periodos: result.periodos,
     opticas: result.opticas,
+    rango, // { desde, hasta } en YYYY-MM-DD, o null si no hay fechas
     totalFilas: result.rows.length,
     filasConAlerta,
     opticaDetectada, // { id, nombre, codigoInterno } | null (solo reportes sin óptica)

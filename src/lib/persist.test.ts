@@ -90,6 +90,16 @@ test("hotfix: re-subir un rango parcial reemplaza solo esos días, conserva el r
     const dia3 = filas.filter((f) => f.consecutivo === "A3");
     assert.strictEqual(dia3.length, 1, "el día 3 no se duplica");
     assert.strictEqual(dia3[0].ventasTotales, 999, "el día 3 quedó con el último valor (999)");
+
+    // totalFilas de cada importación coincide con sus filas reales (bug B).
+    const imps = await db.importacion.findMany({
+      where: { opticaId: optica.id, periodo: PERIODO, tipoReporte: "VENTA_DETALLADA" },
+      select: { totalFilas: true, _count: { select: { ventas: true } } },
+    });
+    for (const im of imps) {
+      assert.strictEqual(im.totalFilas, im._count.ventas, "totalFilas sincronizado con filas reales");
+    }
+    assert.strictEqual(imps.reduce((s, i) => s + i.totalFilas, 0), 4, "total = 4 filas");
   } finally {
     await db.importacion.deleteMany({ where: { opticaId: optica.id } });
     await db.optica.delete({ where: { id: optica.id } });

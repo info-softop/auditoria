@@ -32,6 +32,7 @@ interface Preview {
   tipoLabel: string;
   periodos: string[];
   opticas: string[];
+  rango: { desde: string; hasta: string } | null;
   totalFilas: number;
   filasConAlerta: number;
   opticaDetectada: { id: string; nombre: string; codigoInterno: string } | null;
@@ -207,7 +208,7 @@ export function UploadWizard({
                 </Button>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Stat label="Filas detectadas" value={preview.totalFilas} />
                 <Stat
                   label="Filas con alerta"
@@ -217,6 +218,16 @@ export function UploadWizard({
                 <Stat
                   label="Ópticas en el archivo"
                   value={preview.opticas.length || "—"}
+                />
+                <Stat
+                  label="Rango de fechas"
+                  value={
+                    preview.rango
+                      ? preview.rango.desde === preview.rango.hasta
+                        ? preview.rango.hasta.split("-").reverse().join("/")
+                        : `${preview.rango.desde.split("-").reverse().join("/")} – ${preview.rango.hasta.split("-").reverse().join("/")}`
+                      : "—"
+                  }
                 />
               </div>
 

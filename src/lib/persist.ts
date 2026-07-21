@@ -197,6 +197,26 @@ export async function persistReport({
       } as Prisma.ImportacionWhereInput,
     });
 
+    // 4) Recalcular totalFilas de las importaciones que quedaron: al borrar por día,
+    //    las viejas pueden tener menos filas de las que declaraban.
+    const impsPeriodo = await tx.importacion.findMany({
+      where: { opticaId, periodo, tipoReporte },
+      select: { id: true },
+    });
+    for (const im of impsPeriodo) {
+      const w = { importacionId: im.id };
+      let n = 0;
+      switch (tipoReporte) {
+        case "VENTA_DETALLADA": n = await tx.ventaDetalladaRow.count({ where: w }); break;
+        case "PEDIDO_LENTES": n = await tx.pedidoLenteRow.count({ where: w }); break;
+        case "GASTOS": n = await tx.gastoRow.count({ where: w }); break;
+        case "COMPROBANTES": n = await tx.comprobanteRow.count({ where: w }); break;
+        case "PAGOS_PROVEEDORES": n = await tx.pagoProveedorRow.count({ where: w }); break;
+        case "CUENTAS_POR_PAGAR": n = await tx.cuentaPorPagarRow.count({ where: w }); break;
+      }
+      await tx.importacion.update({ where: { id: im.id }, data: { totalFilas: n } });
+    }
+
     return { imp: importacion, reemplazadas };
   });
 
