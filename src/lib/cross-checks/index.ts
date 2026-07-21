@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import type { Alerta, Severidad, TipoReporte } from "@/lib/audit-types";
+import type { Prisma } from "@/generated/prisma";
 
 type TipoCruce =
   | "A_CUADRE_ORDEN"
@@ -153,7 +154,10 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
       else lentesPorOrden.set(o, [v]);
     }
 
-    const fusionar = async (v: (typeof ventas)[number], costo: number) => {
+    // B-2: acumular los updates de costo y escribirlos EN LOTE (una transacción)
+    // en vez de un await por lente en el bucle (N round-trips secuenciales).
+    const updatesVenta: Prisma.PrismaPromise<unknown>[] = [];
+    const fusionar = (v: (typeof ventas)[number], costo: number) => {
       // Al fijar el costo real del pedido, las alertas de costo calculadas al
       // parsear (costo cero, venta a pérdida) quedan obsoletas → recalcular.
       const alerts = ((v.alerts as unknown as Alerta[]) ?? []).filter(
@@ -169,14 +173,16 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
           mensaje: `Precio de venta $${pv.toLocaleString("es-CO")} menor que el costo real $${costo.toLocaleString("es-CO")} (venta a pérdida).`,
         });
       }
-      await db.ventaDetalladaRow.update({
-        where: { id: v.id },
-        data: {
-          costoCompra: costo,
-          alerts: alerts as unknown as object,
-          hasAlert: alerts.length > 0,
-        },
-      });
+      updatesVenta.push(
+        db.ventaDetalladaRow.update({
+          where: { id: v.id },
+          data: {
+            costoCompra: costo,
+            alerts: alerts as unknown as object,
+            hasAlert: alerts.length > 0,
+          },
+        })
+      );
     };
 
     const alertaSinCosto = (
@@ -212,7 +218,7 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
       for (const v of lentes) {
         const sumProd = pedidoPorProducto.get(`${orden}|${norm(v.idProducto)}`) ?? 0;
         if (sumProd > 0) {
-          await fusionar(v, sumProd);
+          fusionar(v, sumProd);
           asignadoExacto += sumProd;
         } else {
           sinExacto.push(v);
@@ -224,12 +230,15 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
       if (sinExacto.length > 0) {
         if (restante > 0) {
           const porLente = restante / sinExacto.length;
-          for (const v of sinExacto) await fusionar(v, porLente);
+          for (const v of sinExacto) fusionar(v, porLente);
         } else {
           for (const v of sinExacto) alertaSinCosto(v, true);
         }
       }
     }
+
+    // Escribir todas las fusiones de costo en una sola transacción (B-2).
+    if (updatesVenta.length > 0) await db.$transaction(updatesVenta);
 
     // Recalcular el conteo de filas con alerta (siempre: limpieza Abono + fusiones).
     {
@@ -278,7 +287,7 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
       }
       const unico = (s?: Set<string>) => (s && s.size === 1 ? [...s][0] : null);
 
-      let huboFill = false;
+      const updatesGasto: Prisma.PrismaPromise<unknown>[] = [];
       for (const g of gastosVacios) {
         const prov =
           unico(porComp.get(norm(g.noGastos ?? ""))) ??
@@ -287,13 +296,15 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
         const alerts = ((g.alerts as unknown as Alerta[]) ?? []).filter(
           (a) => !(a.tipo === "campo_vacio" && a.campo === "tercero")
         );
-        await db.gastoRow.update({
-          where: { id: g.id },
-          data: { tercero: prov, alerts: alerts as unknown as object, hasAlert: alerts.length > 0 },
-        });
-        huboFill = true;
+        updatesGasto.push(
+          db.gastoRow.update({
+            where: { id: g.id },
+            data: { tercero: prov, alerts: alerts as unknown as object, hasAlert: alerts.length > 0 },
+          })
+        );
       }
-      if (huboFill) {
+      if (updatesGasto.length > 0) {
+        await db.$transaction(updatesGasto); // escritura en lote (B-2)
         const conAlerta = await db.gastoRow.count({
           where: { importacionId: gastoImpId, hasAlert: true },
         });

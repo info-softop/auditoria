@@ -117,18 +117,40 @@ export async function POST(req: Request) {
     opticasAfectadas.add(opticaId);
   }
 
-  // Re-ejecutar cruces en TODOS los períodos de las ópticas afectadas: el cruce
-  // de costo de lente vincula venta↔pedido por ORDEN sin importar el mes, así
-  // que subir un reporte de un mes puede resolver costos de otros meses.
-  for (const opticaId of opticasAfectadas) {
-    const periodos = await db.importacion.findMany({
-      where: { opticaId },
-      distinct: ["periodo"],
-      select: { periodo: true },
-    });
-    for (const { periodo } of periodos) {
-      await runCrossChecks(opticaId, periodo);
+  // A-1: recruzar SOLO lo necesario (no todos los períodos de la óptica).
+  //  - Siempre: los períodos directamente cargados en esta subida.
+  //  - Cruces óptica-wide que dependen de otros meses:
+  //      · Cruce B (costo lente): un PEDIDO afecta las VENTAS de cualquier mes
+  //        (venta↔pedido se ligan por ORDEN sin importar la fecha).
+  //      · Relleno de TERCERO en Gastos: un PAGO afecta los GASTOS de cualquier mes.
+  //    → si subimos ese tipo, recruzamos también los meses del tipo dependiente.
+  const recruzar = new Map<string, Set<string>>(); // opticaId → períodos
+  const addRecruz = (opticaId: string, periodo: string) => {
+    const s = recruzar.get(opticaId) ?? new Set<string>();
+    s.add(periodo);
+    recruzar.set(opticaId, s);
+  };
+  for (const { opticaId, periodo } of grupos.values()) addRecruz(opticaId, periodo);
+
+  const tipoDependiente =
+    tipoReporte === "PEDIDO_LENTES"
+      ? ("VENTA_DETALLADA" as const)
+      : tipoReporte === "PAGOS_PROVEEDORES"
+        ? ("GASTOS" as const)
+        : null;
+  if (tipoDependiente) {
+    for (const opticaId of opticasAfectadas) {
+      const otros = await db.importacion.findMany({
+        where: { opticaId, tipoReporte: tipoDependiente },
+        distinct: ["periodo"],
+        select: { periodo: true },
+      });
+      for (const { periodo } of otros) addRecruz(opticaId, periodo);
     }
+  }
+
+  for (const [opticaId, periodos] of recruzar) {
+    for (const periodo of periodos) await runCrossChecks(opticaId, periodo);
   }
 
   return NextResponse.json({
