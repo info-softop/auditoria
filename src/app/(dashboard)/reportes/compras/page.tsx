@@ -23,14 +23,16 @@ function labelMes(p: string): string {
 export default async function ReporteComprasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; optica?: string }>;
 }) {
   await requireRole(["ADMIN", "AUDITOR"]);
   const sp = await searchParams;
-  const { periodo, periodos } = await resolveFilters(sp);
+  const { periodo, opticaId, periodos, opticas } = await resolveFilters(sp);
 
-  // Compras = Cuentas por Pagar (Cuánto Debo). Todos los períodos (para la tendencia).
+  // Compras = Cuentas por Pagar (Cuánto Debo). Filtrado por óptica si se
+  // seleccionó; todos los períodos (para la tendencia).
   const rows = await db.cuentaPorPagarRow.findMany({
+    where: { importacion: { ...(opticaId ? { opticaId } : {}) } },
     select: {
       total: true,
       proveedor: true,
@@ -59,10 +61,9 @@ export default async function ReporteComprasPage({
       >
         <FilterBar
           periodos={periodos}
-          opticas={[]}
+          opticas={opticas}
           activePeriodo={periodo}
-          activeOptica={null}
-          showOptica={false}
+          activeOptica={opticaId}
         />
       </PageHeader>
 
@@ -100,12 +101,14 @@ export default async function ReporteComprasPage({
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               <Desglose titulo="Compras por proveedor" items={porProveedor} total={total} />
-              <Card>
-                <CardContent className="pt-6">
-                  <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
-                  <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
-                </CardContent>
-              </Card>
+              {porOptica.length > 1 && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
+                    <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>

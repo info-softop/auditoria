@@ -23,16 +23,17 @@ function labelMes(p: string): string {
 export default async function ReporteGastosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; optica?: string }>;
 }) {
   await requireRole(["ADMIN", "AUDITOR"]);
   const sp = await searchParams;
-  const { periodo, periodos } = await resolveFilters(sp);
+  const { periodo, opticaId, periodos, opticas } = await resolveFilters(sp);
 
-  // Gasto real = filas D (partida doble). Todos los períodos (para la tendencia).
+  // Gasto real = filas D (partida doble). Filtrado por óptica si se seleccionó;
+  // todos los períodos (para la tendencia).
   const rows = await db.gastoRow.findMany({
     where: {
-      importacion: { tipoReporte: "GASTOS" },
+      importacion: { tipoReporte: "GASTOS", ...(opticaId ? { opticaId } : {}) },
       dc: { equals: "D", mode: "insensitive" },
     },
     select: {
@@ -67,10 +68,9 @@ export default async function ReporteGastosPage({
       >
         <FilterBar
           periodos={periodos}
-          opticas={[]}
+          opticas={opticas}
           activePeriodo={periodo}
-          activeOptica={null}
-          showOptica={false}
+          activeOptica={opticaId}
         />
       </PageHeader>
 
@@ -112,12 +112,14 @@ export default async function ReporteGastosPage({
                 <Desglose titulo="Por categoría (cuenta de gasto)" items={porCategoria} total={total} />
                 <Desglose titulo="Por proveedor / tercero" items={porProveedor} total={total} />
               </div>
-              <Card>
-                <CardContent className="pt-6">
-                  <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
-                  <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
-                </CardContent>
-              </Card>
+              {porOptica.length > 1 && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
+                    <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
+                  </CardContent>
+                </Card>
+              )}
             </>
           )}
         </div>
