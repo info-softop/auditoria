@@ -40,12 +40,13 @@ function iso(d: Date | null): string {
 export default async function GastosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; cat?: string }>;
+  searchParams: Promise<{ mes?: string; cat?: string; optica?: string }>;
 }) {
   await requireRole(["ADMIN", "AUDITOR"]);
   const sp = await searchParams;
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "") ? sp.mes! : mesActual();
   const cat = sp.cat?.trim() || "";
+  const opticaId = sp.optica?.trim() || "";
   const [y, m] = mes.split("-").map(Number);
   const inicio = new Date(Date.UTC(y, m - 1, 1));
   const fin = new Date(Date.UTC(y, m, 1));
@@ -55,6 +56,7 @@ export default async function GastosPage({
       where: {
         fechaVence: { gte: inicio, lt: fin },
         ...(cat ? { categoria: cat } : {}),
+        ...(opticaId ? { opticaId } : {}),
       },
       orderBy: [{ fechaVence: "desc" }],
       include: {
@@ -75,7 +77,7 @@ export default async function GastosPage({
     // contra-asiento a cuentas por pagar). Se filtra por el mes seleccionado.
     db.gastoRow.findMany({
       where: {
-        importacion: { tipoReporte: "GASTOS" },
+        importacion: { tipoReporte: "GASTOS", ...(opticaId ? { opticaId } : {}) },
         fecha: { gte: inicio, lt: fin },
         dc: { equals: "D", mode: "insensitive" },
       },
@@ -124,6 +126,19 @@ export default async function GastosPage({
             defaultValue={mes}
             className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
           />
+        </div>
+        <div className="grid gap-1">
+          <label className="text-xs text-muted-foreground">Óptica</label>
+          <select
+            name="optica"
+            defaultValue={opticaId}
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          >
+            <option value="">Todas</option>
+            {opticas.map((o) => (
+              <option key={o.id} value={o.id}>{o.nombre}</option>
+            ))}
+          </select>
         </div>
         <div className="grid gap-1">
           <label className="text-xs text-muted-foreground">Categoría</label>
