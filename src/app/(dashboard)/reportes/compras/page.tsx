@@ -1,14 +1,16 @@
 import { PageHeader } from "@/components/page-header";
+import { FilterBar } from "@/components/filter-bar";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
-import { formatCOP, formatNumber } from "@/lib/format";
+import { resolveFilters } from "@/lib/filters";
+import { formatCOP, formatNumber, formatPeriodo } from "@/lib/format";
 import { agrupar } from "@/lib/agrupar";
 import { Desglose } from "@/components/informe/desglose";
 import { TendenciaChart } from "@/components/informe/tendencia-chart";
 import { DonaChart } from "@/components/informe/dona-chart";
-import { ShoppingCart, Layers, Users } from "lucide-react";
+import { ShoppingCart, Hash, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +20,16 @@ function labelMes(p: string): string {
   return `${MESES[(m ?? 1) - 1] ?? "?"} ${String(y ?? "").slice(2)}`;
 }
 
-export default async function ReporteComprasPage() {
+export default async function ReporteComprasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periodo?: string }>;
+}) {
   await requireRole(["ADMIN", "AUDITOR"]);
+  const sp = await searchParams;
+  const { periodo, periodos } = await resolveFilters(sp);
 
-  // Compras = Cuentas por Pagar (Cuánto Debo). Todos los períodos.
+  // Compras = Cuentas por Pagar (Cuánto Debo). Todos los períodos (para la tendencia).
   const rows = await db.cuentaPorPagarRow.findMany({
     select: {
       total: true,
@@ -29,10 +37,6 @@ export default async function ReporteComprasPage() {
       importacion: { select: { periodo: true, optica: { select: { nombre: true } } } },
     },
   });
-
-  const total = rows.reduce((s, r) => s + (r.total ?? 0), 0);
-  const porProveedor = agrupar(rows, (r) => r.proveedor, (r) => r.total ?? 0);
-  const porOptica = agrupar(rows, (r) => r.importacion.optica?.nombre, (r) => r.total ?? 0);
 
   const mesMap = new Map<string, number>();
   for (const r of rows) {
@@ -42,16 +46,29 @@ export default async function ReporteComprasPage() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([p, monto]) => ({ mes: labelMes(p), monto }));
 
+  const rowsMes = rows.filter((r) => r.importacion.periodo === periodo);
+  const total = rowsMes.reduce((s, r) => s + (r.total ?? 0), 0);
+  const porProveedor = agrupar(rowsMes, (r) => r.proveedor, (r) => r.total ?? 0);
+  const porOptica = agrupar(rowsMes, (r) => r.importacion.optica?.nombre, (r) => r.total ?? 0);
+
   return (
     <>
       <PageHeader
         title="Informe de Compras"
-        description="Análisis de las compras registradas (reporte Cuentas por Pagar / Cuánto Debo), en todos los períodos. Mayormente compras a laboratorios."
-      />
+        description="Compras registradas del mes seleccionado (Cuentas por Pagar / Cuánto Debo). La tendencia muestra todos los meses."
+      >
+        <FilterBar
+          periodos={periodos}
+          opticas={[]}
+          activePeriodo={periodo}
+          activeOptica={null}
+          showOptica={false}
+        />
+      </PageHeader>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <KpiCard label="Total comprado" value={formatCOP(total)} icon={ShoppingCart} />
-        <KpiCard label="Nº de compras" value={formatNumber(rows.length)} icon={Layers} />
+        <KpiCard label={`Total ${periodo ? formatPeriodo(periodo) : "del mes"}`} value={formatCOP(total)} icon={ShoppingCart} />
+        <KpiCard label="Nº de compras" value={formatNumber(rowsMes.length)} icon={Hash} />
         <KpiCard label="Proveedores" value={formatNumber(porProveedor.length)} icon={Users} />
       </div>
 
@@ -67,20 +84,30 @@ export default async function ReporteComprasPage() {
         <div className="mt-6 space-y-6">
           <Card>
             <CardContent className="pt-6">
-              <h3 className="mb-4 font-heading text-sm font-medium">Tendencia mensual</h3>
+              <h3 className="mb-4 font-heading text-sm font-medium">Tendencia mensual (todos los meses)</h3>
               <TendenciaChart data={tendencia} />
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Desglose titulo="Compras por proveedor" items={porProveedor} total={total} />
+          {rowsMes.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
-                <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
-                <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Sin compras en {periodo ? formatPeriodo(periodo) : "este mes"}. Elige otro mes arriba.
+                </p>
               </CardContent>
             </Card>
-          </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Desglose titulo="Compras por proveedor" items={porProveedor} total={total} />
+              <Card>
+                <CardContent className="pt-6">
+                  <h3 className="mb-4 font-heading text-sm font-medium">Distribución por óptica</h3>
+                  <DonaChart data={porOptica.map((o) => ({ label: o.label, monto: o.monto }))} />
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       )}
     </>
