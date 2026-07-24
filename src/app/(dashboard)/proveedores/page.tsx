@@ -7,7 +7,9 @@ import { db } from "@/lib/db";
 import { resolveFilters } from "@/lib/filters";
 import { requireUser } from "@/lib/auth-helpers";
 import { formatCOP, formatNumber } from "@/lib/format";
-import { Wallet, Users, HandCoins, TriangleAlert, FileSearch } from "lucide-react";
+import { Wallet, Users, HandCoins, TriangleAlert, FileSearch, ShoppingCart, Layers } from "lucide-react";
+import { agrupar } from "@/lib/agrupar";
+import { Desglose } from "@/components/informe/desglose";
 import {
   SaldoProveedoresTable,
   type SaldoProveedor,
@@ -33,7 +35,7 @@ export default async function ProveedoresPage({
     ...(opticaId ? { opticaId } : {}),
   };
 
-  const [comprasGrouped, pagosGrouped, alertas] = await Promise.all([
+  const [comprasGrouped, pagosGrouped, comprasRows, alertas] = await Promise.all([
     db.cuentaPorPagarRow.groupBy({
       by: ["proveedor"],
       where: { importacion: importacionWhere },
@@ -43,6 +45,15 @@ export default async function ProveedoresPage({
       by: ["proveedor"],
       where: { importacion: importacionWhere },
       _sum: { debito: true },
+    }),
+    // Filas de compras (Cuánto Debo) para el informe: agrupamos normalizado.
+    db.cuentaPorPagarRow.findMany({
+      where: { importacion: importacionWhere },
+      select: {
+        proveedor: true,
+        total: true,
+        importacion: { select: { optica: { select: { nombre: true } } } },
+      },
     }),
     db.alertaCruce.findMany({
       where: {
@@ -100,6 +111,11 @@ export default async function ProveedoresPage({
   const proveedoresConSaldo = filas.filter((f) => f.saldo > 0).length;
   const totalPagado = filas.reduce((s, f) => s + f.pagado, 0);
 
+  // Informe de compras (Cuánto Debo), agrupado normalizado (case/espacios).
+  const totalComprado = comprasRows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const comprasPorProveedor = agrupar(comprasRows, (c) => c.proveedor, (c) => c.total ?? 0);
+  const comprasPorOptica = agrupar(comprasRows, (c) => c.importacion.optica?.nombre, (c) => c.total ?? 0);
+
   return (
     <>
       <PageHeader
@@ -135,6 +151,32 @@ export default async function ProveedoresPage({
           icon={HandCoins}
           tone="success"
         />
+      </div>
+
+      {/* ───────── Informe de compras (Cuánto Debo) ───────── */}
+      <div className="mt-10 space-y-4">
+        <h2 className="font-heading text-lg font-medium">Informe de compras</h2>
+        {comprasRows.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Sin compras cargadas para el período. Súbelas en “Cargar reportes” (Cuentas por Pagar / Cuánto Debo).
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <KpiCard label="Total comprado" value={formatCOP(totalComprado)} icon={ShoppingCart} />
+              <KpiCard label="Nº de compras" value={formatNumber(comprasRows.length)} icon={Layers} />
+              <KpiCard label="Proveedores" value={formatNumber(comprasPorProveedor.length)} icon={Users} />
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Desglose titulo="Compras por proveedor" items={comprasPorProveedor} total={totalComprado} />
+              <Desglose titulo="Compras por óptica" items={comprasPorOptica} total={totalComprado} top={6} />
+            </div>
+          </>
+        )}
       </div>
 
       {alertas.length > 0 && (

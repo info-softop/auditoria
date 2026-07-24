@@ -15,7 +15,9 @@ import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { cuentasConSaldo } from "@/lib/tesoreria";
 import { formatCOP, formatFecha } from "@/lib/format";
-import { Receipt, Wallet, CircleCheck } from "lucide-react";
+import { Receipt, Wallet, CircleCheck, Users, Layers, Store } from "lucide-react";
+import { agrupar } from "@/lib/agrupar";
+import { Desglose } from "@/components/informe/desglose";
 import { GastoDialog, type GastoValores } from "./_components/gasto-dialog";
 import { PagarGasto, BorrarGasto } from "./_components/gasto-acciones";
 
@@ -95,6 +97,10 @@ export default async function GastosPage({
   const pendiente = gastos.filter((g) => g.estado === "pendiente").reduce((s, g) => s + g.monto, 0);
   const pagado = gastos.filter((g) => g.estado === "pagado").reduce((s, g) => s + g.monto, 0);
   const totalOperativo = gastosOperativos.reduce((s, g) => s + (g.valor ?? 0), 0);
+  // Desgloses del informe operativo (agrupados normalizados: case/espacios).
+  const opPorCategoria = agrupar(gastosOperativos, (g) => g.descripcion, (g) => g.valor ?? 0);
+  const opPorTercero = agrupar(gastosOperativos, (g) => g.tercero, (g) => g.valor ?? 0);
+  const opPorOptica = agrupar(gastosOperativos, (g) => g.importacion.optica?.nombre, (g) => g.valor ?? 0);
 
   const empleadosOpts = empleados.map((e) => ({
     id: e.id,
@@ -233,62 +239,79 @@ export default async function GastosPage({
         </CardContent>
       </Card>
 
-      {/* Gastos operativos SUBIDOS (reporte Softop) — solo lectura, regla D. */}
-      <div className="mt-10">
-        <div className="mb-3 flex items-baseline justify-between gap-2">
-          <h2 className="font-heading text-lg font-medium">
-            Gastos operativos <span className="text-muted-foreground">(reporte subido)</span>
-          </h2>
-          <span className="text-sm text-muted-foreground">
-            Total operativo:{" "}
-            <span className="font-medium text-foreground tabular-nums-fin">
-              {formatCOP(totalOperativo)}
-            </span>
-          </span>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            {gastosOperativos.length === 0 ? (
+      {/* ───────── Informe de gastos operativos (reporte Softop subido) ───────── */}
+      <div className="mt-12 space-y-4">
+        <h2 className="font-heading text-lg font-medium">
+          Informe de gastos operativos{" "}
+          <span className="text-muted-foreground">(reporte subido)</span>
+        </h2>
+
+        {gastosOperativos.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
               <p className="py-10 text-center text-sm text-muted-foreground">
                 Sin gastos operativos cargados para este mes. Súbelos en “Cargar reportes”
-                (reporte de Gastos). Se suma solo la fila de débito de cada gasto.
+                (reporte de Gastos). Se suma solo la fila de débito de cada gasto (partida doble).
               </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Cuenta</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead>Tercero</TableHead>
-                      <TableHead>Óptica</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {gastosOperativos.map((g) => (
-                      <TableRow key={g.id}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {formatFecha(g.fecha)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{g.cuenta ?? "—"}</TableCell>
-                        <TableCell className="font-medium">{g.descripcion ?? "—"}</TableCell>
-                        <TableCell className="text-muted-foreground">{g.tercero ?? "—"}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {g.importacion.optica?.nombre ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums-fin">
-                          {formatCOP(g.valor ?? 0)}
-                        </TableCell>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <KpiCard label="Total operativo" value={formatCOP(totalOperativo)} icon={Receipt} />
+              <KpiCard label="Nº de gastos" value={gastosOperativos.length} icon={Layers} />
+              <KpiCard label="Categorías" value={opPorCategoria.length} icon={Layers} />
+              <KpiCard label="Terceros" value={opPorTercero.length} icon={Users} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Desglose titulo="Por categoría (cuenta de gasto)" items={opPorCategoria} total={totalOperativo} />
+              <Desglose titulo="Por tercero / proveedor" items={opPorTercero} total={totalOperativo} />
+            </div>
+
+            <Desglose titulo="Por óptica" items={opPorOptica} total={totalOperativo} top={6} />
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  <Store className="size-4 text-muted-foreground" /> Detalle
+                </div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Cuenta</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead>Tercero</TableHead>
+                        <TableHead>Óptica</TableHead>
+                        <TableHead className="text-right">Valor</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {gastosOperativos.map((g) => (
+                        <TableRow key={g.id}>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">
+                            {formatFecha(g.fecha)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{g.cuenta ?? "—"}</TableCell>
+                          <TableCell className="font-medium">{g.descripcion ?? "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{g.tercero ?? "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {g.importacion.optica?.nombre ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums-fin">
+                            {formatCOP(g.valor ?? 0)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </>
   );
