@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { cuentaDeMetodo, type CuentaDestino } from "@/lib/payment-accounts";
+import { VENTA_NO_ANULADA } from "@/lib/venta-filters";
 
 export interface IngresosCuenta {
   // Total por cuenta destino (todas las ópticas del filtro).
@@ -38,6 +39,7 @@ export async function ingresosPorCuenta(
       // Solo líneas de venta (las filas "Abono" repiten los productos).
       // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
       tipoMovimiento: { equals: "Venta", mode: "insensitive" },
+      ...VENTA_NO_ANULADA,
     },
     _sum: { precioVenta: true },
   });

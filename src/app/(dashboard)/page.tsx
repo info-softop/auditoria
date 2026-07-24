@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth-helpers";
 import { resolveFilters } from "@/lib/filters";
 import { ventaKpis } from "@/lib/kpis";
 import { formatCOP, formatNumber, formatPct, formatPeriodo } from "@/lib/format";
+import { VENTA_NO_ANULADA } from "@/lib/venta-filters";
 import type { Prisma } from "@/generated/prisma";
 import {
   Banknote,
@@ -43,6 +44,7 @@ export default async function ResumenPage({
       tipoReporte: "VENTA_DETALLADA",
       ...(opticaId ? { opticaId } : {}),
     },
+    ...VENTA_NO_ANULADA,
   };
 
   const [kpis, alertasCruce, filasConAlerta, filas] = await Promise.all([

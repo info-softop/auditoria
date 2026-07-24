@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import type { Alerta, Severidad, TipoReporte } from "@/lib/audit-types";
 import type { Prisma } from "@/generated/prisma";
+import { VENTA_NO_ANULADA } from "@/lib/venta-filters";
 
 type TipoCruce =
   | "A_CUADRE_ORDEN"
@@ -45,7 +46,7 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
   // ── A: cuadre por orden / líneas duplicadas (intra Venta Detallada) ──
   if (ventaImpId) {
     const filas = await db.ventaDetalladaRow.findMany({
-      where: { importacionId: ventaImpId },
+      where: { importacionId: ventaImpId, ...VENTA_NO_ANULADA },
       select: { consecutivo: true, precioVenta: true, ventasTotales: true, tipoMovimiento: true },
     });
     // Agrupar por orden (consecutivo). Solo cuentan las líneas de VENTA: las
@@ -109,6 +110,7 @@ export async function runCrossChecks(opticaId: string, periodo: string) {
       where: {
         importacionId: ventaImpId,
         tipoMovimiento: { equals: "Venta", mode: "insensitive" },
+        ...VENTA_NO_ANULADA,
       },
       select: {
         id: true,

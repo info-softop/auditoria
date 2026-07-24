@@ -62,6 +62,13 @@ test("P-2: ventaKpis cuenta filas Venta sin importar mayúsculas (VENTA/venta)",
           cantidad: 99, precioVenta: 99999, costoCompra: 0,
           ventasTotales: 0, totalRecaudo: 70000,
         },
+        // Venta ANULADA: NO debe contar en ningún KPI (estado "Anulada").
+        {
+          importacionId: imp.id, rowIndex: 3, optica: OPTICA, raw: {},
+          consecutivo: "T9", tipoMovimiento: "Venta", estado: "Anulada",
+          cantidad: 7, precioVenta: 999999, costoCompra: 1,
+          ventasTotales: 999999, totalRecaudo: 999999,
+        },
       ],
     });
 

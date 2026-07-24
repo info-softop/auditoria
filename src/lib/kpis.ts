@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
+import { VENTA_NO_ANULADA } from "@/lib/venta-filters";
 
 export interface VentaKpis {
   ventas: number; // suma de VENTAS TOTALES (por orden)
@@ -28,11 +29,15 @@ export async function ventaKpis(
   opticaId?: string | null
 ): Promise<VentaKpis> {
   const base = { periodo, tipoReporte: "VENTA_DETALLADA" as const, ...(opticaId ? { opticaId } : {}) };
-  const whereTodas: Prisma.VentaDetalladaRowWhereInput = { importacion: base };
+  const whereTodas: Prisma.VentaDetalladaRowWhereInput = {
+    importacion: base,
+    ...VENTA_NO_ANULADA,
+  };
   const whereVenta: Prisma.VentaDetalladaRowWhereInput = {
     importacion: base,
     // Insensible a mayúsculas: Softop puede exportar "VENTA"/"venta" (P-2).
     tipoMovimiento: { equals: "Venta", mode: "insensitive" },
+    ...VENTA_NO_ANULADA,
   };
 
   const [aggOrden, lineasAgg, porOrden] = await Promise.all([
@@ -95,7 +100,7 @@ export async function recaudoPorAsesora(
   opticaId: string
 ): Promise<AsesoraRecaudo[]> {
   const rows = await db.ventaDetalladaRow.findMany({
-    where: { importacion: { periodo, tipoReporte: "VENTA_DETALLADA", opticaId } },
+    where: { importacion: { periodo, tipoReporte: "VENTA_DETALLADA", opticaId }, ...VENTA_NO_ANULADA },
     select: { atendidoPor: true, consecutivo: true, totalRecaudo: true },
   });
 

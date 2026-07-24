@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { VENTA_NO_ANULADA } from "@/lib/venta-filters";
 
 export interface RankingAsesora {
   asesora: string;
@@ -84,6 +85,7 @@ export async function analisisComercial(
       importacion: { periodo, tipoReporte: "VENTA_DETALLADA", ...(opticaId ? { opticaId } : {}) },
       // Insensible a mayúsculas ("VENTA"/"venta") — P-2.
       tipoMovimiento: { equals: "Venta", mode: "insensitive" },
+      ...VENTA_NO_ANULADA,
     },
     select: {
       atendidoPor: true,
