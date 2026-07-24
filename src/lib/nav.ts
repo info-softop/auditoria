@@ -13,6 +13,8 @@ import {
   Users,
   ScrollText,
   UserCog,
+  FileBarChart,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,7 +23,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   roles?: Role[]; // si se omite, visible para todos
-  group: "Auditoría" | "Comercial" | "Finanzas" | "Configuración" | "RRHH";
+  group: "Auditoría" | "Reportes" | "Comercial" | "Finanzas" | "Configuración" | "RRHH";
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -29,6 +31,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Resumen", icon: LayoutDashboard, group: "Auditoría" },
   { href: "/cargar", label: "Cargar reportes", icon: Upload, group: "Auditoría", roles: ["ADMIN", "AUDITOR"] },
   { href: "/alertas", label: "Alertas", icon: TriangleAlert, group: "Auditoría" },
+
+  // REPORTES
+  { href: "/reportes/gastos", label: "Informe de Gastos", icon: FileBarChart, group: "Reportes", roles: ["ADMIN", "AUDITOR"] },
+  { href: "/reportes/compras", label: "Informe de Compras", icon: ShoppingCart, group: "Reportes", roles: ["ADMIN", "AUDITOR"] },
 
   // COMERCIAL
   { href: "/analisis", label: "Análisis", icon: BarChart3, group: "Comercial" },
@@ -51,6 +57,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const NAV_GROUPS = [
   "Auditoría",
+  "Reportes",
   "Comercial",
   "Finanzas",
   "Configuración",
