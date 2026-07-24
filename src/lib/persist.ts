@@ -80,28 +80,36 @@ export async function persistReport({
 
   const filasConAlerta = rows.filter((r) => r.alerts.length > 0).length;
 
-  // Días presentes en el archivo (por el campo de fecha del tipo de reporte).
+  // Rango de fechas del archivo (primer y último día), por el campo de fecha del
+  // tipo de reporte. Se reemplaza TODO ese rango — no solo los días sueltos — para
+  // que, si un registro cambia de fecha entre exportaciones o el archivo cubre el
+  // mes completo, NO queden copias viejas duplicadas.
   const dateField = DATE_FIELD[tipoReporte];
-  const diasMap = new Map<number, Date>();
+  let minT = Number.POSITIVE_INFINITY;
+  let maxT = Number.NEGATIVE_INFINITY;
   let hayFechaNula = false;
   for (const r of rows) {
     const v = r.data[dateField];
     if (v instanceof Date && !Number.isNaN(v.getTime())) {
       const t = diaUTC(v);
-      if (!diasMap.has(t)) diasMap.set(t, new Date(t));
+      if (t < minT) minT = t;
+      if (t > maxT) maxT = t;
     } else {
       hayFechaNula = true;
     }
   }
-  const dias = [...diasMap.values()];
+  const hayFechas = maxT >= minT;
+  const desde = hayFechas ? new Date(minT) : null;
+  const hasta = hayFechas ? new Date(maxT) : null;
 
   const { imp, reemplazadas } = await db.$transaction(async (tx) => {
-    // 1) Reemplazar SOLO los días del archivo: borra las filas existentes de esos
-    //    días (y las de fecha nula si el archivo trae filas sin fecha).
+    // 1) Reemplazar el RANGO de fechas del archivo: borra las filas existentes
+    //    entre el primer y último día del archivo (y las de fecha nula si el
+    //    archivo trae filas sin fecha). Evita duplicados por cambios de fecha.
     let reemplazadas = 0;
     const relImp = { importacion: { opticaId, periodo, tipoReporte } };
     const orFecha = (campo: "fecha" | "fechaOrden") => [
-      { [campo]: { in: dias } },
+      ...(hayFechas ? [{ [campo]: { gte: desde, lte: hasta } }] : []),
       ...(hayFechaNula ? [{ [campo]: null }] : []),
     ];
     switch (tipoReporte) {

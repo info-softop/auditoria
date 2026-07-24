@@ -106,3 +106,39 @@ test("hotfix: re-subir un rango parcial reemplaza solo esos días, conserva el r
     await db.user.delete({ where: { id: user.id } });
   }
 });
+
+test("reemplazo por rango: un registro que cambia de fecha NO se duplica", async () => {
+  const OPTICA2 = "__TEST_PERSIST_RANGO__";
+  const EMAIL2 = "__test_persist_rango@local.test";
+  const user = await db.user.upsert({
+    where: { email: EMAIL2 }, update: {},
+    create: { email: EMAIL2, name: "Test Rango", password: "x", role: "ADMIN" },
+  });
+  const optica = await db.optica.upsert({
+    where: { nombre: OPTICA2 }, update: {}, create: { nombre: OPTICA2, grupo: "test" },
+  });
+  const base = { opticaId: optica.id, periodo: PERIODO, tipoReporte: "VENTA_DETALLADA" as const, userId: user.id };
+
+  try {
+    // Carga 1: registro A en el día 5.
+    await persistReport({ ...base, fileName: "u1.xlsx", result: paquete([fila(0, 5, "A", 100)]) });
+    // Carga 2: A pasa al día 3 + B en el día 6 (rango 3–6 cubre el día 5 viejo).
+    await persistReport({
+      ...base, fileName: "u2.xlsx",
+      result: paquete([fila(0, 3, "A", 100), fila(1, 6, "B", 200)]),
+    });
+
+    const filas = await db.ventaDetalladaRow.findMany({
+      where: { importacion: { opticaId: optica.id, periodo: PERIODO, tipoReporte: "VENTA_DETALLADA" } },
+      select: { consecutivo: true, fecha: true },
+    });
+    const aRows = filas.filter((f) => f.consecutivo === "A");
+    assert.strictEqual(aRows.length, 1, "A no se duplica: el rango borró la copia vieja del día 5");
+    assert.strictEqual(aRows[0].fecha?.getUTCDate(), 3, "A quedó en el día 3 (último archivo)");
+    assert.strictEqual(filas.length, 2, "solo A(día 3) y B(día 6)");
+  } finally {
+    await db.importacion.deleteMany({ where: { opticaId: optica.id } });
+    await db.optica.delete({ where: { id: optica.id } });
+    await db.user.delete({ where: { id: user.id } });
+  }
+});
